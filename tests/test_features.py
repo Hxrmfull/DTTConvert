@@ -9,6 +9,8 @@ import tempfile
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
+# Помощники тестов (tgs_fixture) лежат рядом с наборами.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 WORK_ROOT = os.path.join(tempfile.gettempdir(), "mcs_tests")
 os.makedirs(WORK_ROOT, exist_ok=True)
 
@@ -785,6 +787,34 @@ def t_spinbox_text_fits():
         win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(50)
         win.close()
 check("текст в полях чисел не обрезается кнопками", t_spinbox_text_fits)
+
+
+def t_tgs_in_queue_and_preview():
+    from tgs_fixture import make_tgs
+    from main_window import DATA_ROLE, TAB_TELEGRAM, supported_files_filter
+    sticker = make_tgs(os.path.join(WORK, "стикер.tgs"), frames=90, fps=30)
+    assert "*.tgs" in supported_files_filter()
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    win._on_scan_finished([sticker], [])
+    win.file_list.setCurrentRow(0)
+    item = win.file_list.item(0)
+    # Формат по умолчанию — GIF, длительность видна прямо в очереди.
+    assert item.data(DATA_ROLE).settings.output_format == "gif"
+    assert "3" in item.text() and "→" in item.text(), item.text()
+    deadline = _time.monotonic() + 10
+    while item.icon().isNull() and _time.monotonic() < deadline:
+        settle(50)
+    assert not item.icon().isNull(), "у стикера нет миниатюры"
+    # Предпросмотр проигрывает стикер, а не показывает один кадр.
+    win.settings_tabs.setCurrentIndex(TAB_TELEGRAM); settle(260)
+    preview = win.chat_previews["telegram"]
+    deadline = _time.monotonic() + 10
+    while preview._movie is None and _time.monotonic() < deadline:
+        settle(50)
+    assert preview._movie is not None and preview.has_content(), "стикер не проигрывается"
+    win.close()
+check("стикер .tgs: миниатюра, длительность, проигрывание в предпросмотре",
+      t_tgs_in_queue_and_preview)
 
 
 def idle_status_text():

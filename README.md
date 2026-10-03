@@ -105,8 +105,16 @@ FFmpeg можно простой заменой файла — пересоби�
   в `%LOCALAPPDATA%\DTTConvert\pasted` и ставит в очередь; скопированные
   файлы и путь к файлу добавляются как есть. Вставки старше недели
   удаляются сами.
-- На вход принимаются JPG, PNG, APNG, WEBP, BMP, AVIF, HEIC/HEIF, TIFF, GIF
-  и видео MP4, WebM, AVI, MOV, MKV, M4V, WMV, FLV, MPG, 3GP, OGV.
+- На вход принимаются JPG, PNG, APNG, WEBP, BMP, AVIF, HEIC/HEIF, TIFF, GIF,
+  видео MP4, WebM, AVI, MOV, MKV, M4V, WMV, FLV, MPG, 3GP, OGV и
+  анимированные стикеры Telegram **.tgs**.
+- Стикер `.tgs` (векторная анимация Lottie) переводится в GIF, APNG, видео,
+  кадр PNG/WEBP и во все пресеты: видео-стикер и эмодзи Telegram (WEBM),
+  эмодзи Discord, смайлики Twitch, 7TV и BTTV, стикер WhatsApp. Кадры рисует
+  rlottie — та же библиотека, что у самого Telegram; вектор отрисовывается
+  сразу в нужном размере, без потери чёткости. В предпросмотре стикер
+  проигрывается. Обратно, в `.tgs`, перевести нельзя: из картинки или видео
+  векторную анимацию не получить.
 - Параллельная обработка очереди: несколько файлов одновременно (для картинок
   это даёт ускорение в несколько раз, видео параллелится осторожно —
   FFmpeg и так занимает все ядра).
@@ -200,8 +208,11 @@ pip install -r requirements.txt
 или вручную:
 
 ```bash
-pip install PyQt6 Pillow pillow-heif
+pip install PyQt6 Pillow pillow-heif rlottie-python
 ```
+
+`rlottie-python` нужен только для стикеров Telegram `.tgs` — без него
+остальное работает, а `.tgs` выдаёт понятную ошибку.
 
 `pillow-heif` нужен только для чтения HEIC/HEIF (фото с iPhone) — без него
 остальные форматы работают как обычно.
@@ -325,6 +336,7 @@ DTTConvert/
 ├── discord_utils.py    форматы и лимиты стикеров/эмодзи Discord
 ├── whatsapp_utils.py   форматы и лимиты стикеров WhatsApp
 ├── chat_preview.py     предпросмотр результата в макете чата площадки
+├── lottie_utils.py     стикеры Telegram .tgs: кадры через rlottie
 ├── updater.py          проверка новой версии на GitHub
 ├── errors.py           ошибки обработки с переводом при показе
 ├── format_names.py     подписи форматов на текущем языке
@@ -386,7 +398,14 @@ powershell -File build_windows.ps1
 Вшитый FFmpeg — отдельная история: он распространяется по LGPL или GPL
 в зависимости от сборки. Поэтому в вариант **с FFmpeg** кладутся его
 `LICENSE` и `README.txt` (файлы `FFmpeg-LICENSE` и `FFmpeg-README.txt`
-рядом с exe). Вариант **без FFmpeg** ничего чужого не содержит.
+рядом с exe).
+
+Стикеры `.tgs` рисует библиотека rlottie через пакет
+[rlottie-python](https://github.com/laggykiller/rlottie-python) — он
+распространяется по LGPL 2.1. Его `rlottie.dll` лежит в сборке отдельным
+файлом (папка `_internal\rlottie_python`) и заменяется своей версией, а
+текст лицензии кладётся рядом с exe — `rlottie-python-LICENSE.txt`. Это
+касается обоих вариантов сборки.
 
 ## Журнал
 

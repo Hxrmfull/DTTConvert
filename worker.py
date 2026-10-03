@@ -82,6 +82,8 @@ VIDEO_EXTS = {".mp4", ".webm", ".avi", ".mov", ".mkv", ".m4v", ".wmv",
               ".flv", ".mpg", ".mpeg", ".3gp", ".ogv"}
 GIF_EXT = ".gif"
 ANIMATED_WEBP_EXT = ".awebp"
+# Анимированный стикер Telegram (Lottie) — кадры рисует rlottie.
+TGS_EXT = ".tgs"
 # Форматы, которые бывают и статичными, и анимированными: тип определяется
 # по содержимому файла, а не по расширению.
 ANIMATABLE_IMAGE_EXTS = {".webp", ".png", ".apng", ".avif"}
@@ -139,7 +141,7 @@ def get_category(path):
     ext = os.path.splitext(path)[1].lower()
     if ext == GIF_EXT:
         return "gif"
-    if ext == ANIMATED_WEBP_EXT:
+    if ext in (ANIMATED_WEBP_EXT, TGS_EXT):
         return "animated_image"
     if ext in ANIMATABLE_IMAGE_EXTS and is_animated_image(path):
         return "animated_image"

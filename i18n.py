@@ -657,6 +657,17 @@ STRINGS = {
     "err_duration_over": ("Длительность {duration} сек превышает лимит {limit} сек.",
                           "The duration of {duration} s exceeds the {limit} s "
                           "limit."),
+    # Стикеры Telegram (.tgs) рисует библиотека rlottie.
+    "err_no_rlottie": ("Для стикеров .tgs нужна библиотека rlottie, а она не найдена. "
+                       "Переустановите программу; при запуске из исходников "
+                       "выполните pip install rlottie-python.",
+                       "The rlottie library is required for .tgs stickers but was not "
+                       "found. Reinstall the application; when running from source, "
+                       "run pip install rlottie-python."),
+    "err_bad_tgs": ("Не удалось прочитать стикер {name}: файл повреждён или это не "
+                    "анимированный стикер Telegram.",
+                    "Could not read the sticker {name}: the file is damaged or is not "
+                    "a Telegram animated sticker."),
     "err_duration_zero": ("Длительность фрагмента должна быть больше 0 секунд.",
                           "The fragment must be longer than 0 seconds."),
 }

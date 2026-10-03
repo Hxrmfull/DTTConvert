@@ -56,6 +56,8 @@ from PyQt6.QtWidgets import (
 )
 
 from animation_info import animated_image_info
+from lottie_utils import (is_tgs, preview_animation_path, representative_frame,
+                          write_preview_animation)
 from app_info import APP_NAME, ORGANIZATION, RELEASES_URL, version_string, window_title
 from updater import CHECK_INTERVAL_SEC, UpdateCheckWorker, is_newer
 from i18n import (ENGLISH, LANGUAGE_NAMES, LANGUAGE_ORDER, current_language,
@@ -106,6 +108,7 @@ from widgets import (
 from worker import (
     ANIMATABLE_IMAGE_EXTS,
     ANIMATED_WEBP_EXT,
+    TGS_EXT,
     GIF_EXT,
     IMAGE_EXTS,
     VIDEO_EXTS,
@@ -129,7 +132,7 @@ DATA_ROLE = Qt.ItemDataRole.UserRole
 
 # Один список на всё: типы файлов знает обработчик, и окно принимает
 # ровно то, что он умеет разобрать.
-SUPPORTED_INPUT_EXTS = IMAGE_EXTS | VIDEO_EXTS | {GIF_EXT, ANIMATED_WEBP_EXT}
+SUPPORTED_INPUT_EXTS = IMAGE_EXTS | VIDEO_EXTS | {GIF_EXT, ANIMATED_WEBP_EXT, TGS_EXT}
 
 def supported_files_filter():
     """Фильтр диалога выбора файлов строится из списка поддерживаемых
@@ -232,6 +235,8 @@ EXT_TO_DEFAULT_CODE = {
     ".apng": "apng",
     ".webp": "webp",
     ".awebp": "gif",
+    # Стикер Telegram чаще всего переводят в GIF — его открывает что угодно.
+    ".tgs": "gif",
     ".bmp": "bmp",
     ".avif": "avif",
     ".heic": "jpg",
@@ -269,13 +274,14 @@ REPORT_STATUS_KEYS = {
 
 TAB_MAIN, TAB_TELEGRAM, TAB_TWITCH, TAB_DISCORD, TAB_WHATSAPP = 0, 1, 2, 3, 4
 
-THUMBNAIL_IMAGE_EXTS = IMAGE_EXTS | {GIF_EXT}
+# .tgs тоже: миниатюру для него рисует rlottie (см. scaled_thumbnail).
+THUMBNAIL_IMAGE_EXTS = IMAGE_EXTS | {GIF_EXT, TGS_EXT}
 
 # Расширения, за которыми может прятаться анимация. Только для них имеет
 # смысл звать get_category из потока интерфейса: она открывает файл, чтобы
 # отличить анимированный WEBP/PNG/AVIF от статичного, а для всех остальных
 # расширений ответ и так известен заранее.
-MAYBE_ANIMATED_EXTS = ANIMATABLE_IMAGE_EXTS | {ANIMATED_WEBP_EXT}
+MAYBE_ANIMATED_EXTS = ANIMATABLE_IMAGE_EXTS | {ANIMATED_WEBP_EXT, TGS_EXT}
 
 THUMBNAIL_SIZE = 48
 # Кадр для предпросмотра в чате: самый крупный его вариант — 160 px,
@@ -361,6 +367,17 @@ def image_via_pillow(path):
         return None
 
 
+def tgs_thumbnail(path, size):
+    """Кадр стикера .tgs для миниатюры и предпросмотра (None — не вышло)."""
+    try:
+        from PIL.ImageQt import ImageQt
+
+        return QImage(ImageQt(representative_frame(path, size))).copy()
+    except Exception:
+        _log.debug("Не удалось нарисовать стикер %s", path, exc_info=True)
+        return None
+
+
 def scaled_thumbnail(path, size):
     """Читает картинку сразу в размер миниатюры, а не целиком.
 
@@ -372,6 +389,9 @@ def scaled_thumbnail(path, size):
     а QPixmap — устройство отрисовки, и работать с ним вне потока
     интерфейса Qt не разрешает. Перевод в QPixmap делает получатель.
     """
+    if is_tgs(path):
+        # Стикер Telegram: Qt его не читает, кадр из середины рисует rlottie.
+        return tgs_thumbnail(path, size)
     reader = QImageReader(path)
     reader.setAutoTransform(True)
     source_size = reader.size()
@@ -397,6 +417,10 @@ def media_info(path, ffmpeg=None):
         details = animated_image_info(path, getattr(ffmpeg, "ffprobe_path", None))
         if details:
             info.update(duration=details.get("duration"), fps=details.get("fps"))
+        if is_tgs(path):
+            if details:
+                info.update(width=details.get("width"), height=details.get("height"))
+            return info
         # Размер берём заголовком через QImageReader, а не QPixmap: функцию
         # зовут из фонового потока, а QPixmap работает только в потоке
         # интерфейса. Заодно не распаковывается сама картинка.
@@ -563,6 +587,10 @@ class PreviewFrameWorker(QThread):
                         image = QImage(frame_path)
             else:
                 image = scaled_thumbnail(self.path, PREVIEW_FRAME_SIZE)
+                if is_tgs(self.path):
+                    # Проигрываемая копия стикера для предпросмотра: окно
+                    # найдёт её по пути (preview_animation_path).
+                    write_preview_animation(self.path)
         except Exception:
             _log.debug("Не удалось подготовить предпросмотр %s", self.path, exc_info=True)
         self.frame_ready.emit(self.path, image if image is not None else QImage())
@@ -2394,11 +2422,16 @@ class MainWindow(QMainWindow):
     def _show_preview_frame(self, path, image):
         ext = os.path.splitext(path)[1].lower()
         is_video = ext in VIDEO_EXTS
+        movie_path = path if ext in PREVIEW_MOVIE_EXTS else None
+        if is_tgs(path):
+            # Стикер Telegram проигрывается через свою копию в WEBP.
+            candidate = preview_animation_path(path)
+            movie_path = candidate if os.path.isfile(candidate) else None
         for preview in self.chat_previews.values():
-            if ext in PREVIEW_MOVIE_EXTS:
+            if movie_path:
                 # GIF и WEBP проигрываются: анимированный смайлик и выглядит
                 # иначе, чем его первый кадр.
-                preview.set_movie(path, image if not image.isNull() else None)
+                preview.set_movie(movie_path, image if not image.isNull() else None)
             else:
                 preview.set_image(image if not image.isNull() else None, is_video)
 

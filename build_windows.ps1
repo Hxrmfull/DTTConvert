@@ -118,7 +118,12 @@ function Build-Variant([string]$Name, [bool]$Bundle) {
         $binaryArgs = @("--add-binary", "$ffmpeg;.", "--add-binary", "$ffprobe;.")
     }
 
+    # rlottie_python грузит свою rlottie.dll через ctypes — PyInstaller её
+    # сам не видит, без --collect-binaries стикеры .tgs в сборке не работали
+    # бы. Метаданные пакета — ради текста лицензии (LGPL), см. ниже.
     & $Python -m PyInstaller --noconfirm --clean --onedir --windowed `
+        --collect-binaries rlottie_python `
+        --copy-metadata rlottie-python `
         --name $appName `
         --distpath $distPath `
         --workpath $workPath `
@@ -129,6 +134,17 @@ function Build-Variant([string]$Name, [bool]$Bundle) {
     if ($LASTEXITCODE -ne 0) { throw "Сборка «$Name» завершилась с ошибкой." }
 
     $appDir = Join-Path $distPath $appName
+
+    # Лицензия rlottie-python (LGPL 2.1) — рядом с exe, в обоих вариантах.
+    $rlottieLicense = Get-ChildItem -Path (Join-Path $appDir "_internal") -Recurse `
+        -Filter "LICENSE*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.DirectoryName -like "*rlottie_python*" } | Select-Object -First 1
+    if ($rlottieLicense) {
+        Copy-Item -LiteralPath $rlottieLicense.FullName `
+            -Destination (Join-Path $appDir "rlottie-python-LICENSE.txt") -Force
+    } else {
+        Write-Host "Лицензия rlottie-python не найдена в сборке." -ForegroundColor Yellow
+    }
 
     if ($Bundle) {
         # Лицензия FFmpeg едет вместе с бинарником: он распространяется
