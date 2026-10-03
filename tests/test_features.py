@@ -715,6 +715,27 @@ def t_platform_tab_states():
     win.close()
 
 
+def t_combo_popup_corners():
+    from PyQt6.QtCore import Qt as _Qt
+    from PyQt6.QtWidgets import QComboBox
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    for combo in win.findChildren(QComboBox):
+        container = combo.view().window()
+        # Окно списка на экран не выводим — снимок рисуется и так.
+        container.setAttribute(_Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        combo.showPopup(); settle(150)
+        image = container.grab().toImage()
+        combo.hidePopup(); settle(50)
+        corners = [image.pixelColor(x, y).alpha()
+                   for x, y in ((0, 0), (image.width() - 1, 0),
+                                (0, image.height() - 1),
+                                (image.width() - 1, image.height() - 1))]
+        # За скруглённой карточкой не должно быть квадратного окна.
+        assert corners == [0, 0, 0, 0], (combo.currentText(), corners)
+    win.close()
+check("выпадающие списки без квадрата за скруглёнными углами", t_combo_popup_corners)
+
+
 def idle_status_text():
     from main_window import idle_status
     return idle_status()

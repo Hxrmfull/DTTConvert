@@ -231,6 +231,27 @@ class MenuLabel(QLabel):
         super().keyPressEvent(event)
 
 
+def round_combo_popup(combo):
+    """Убирает квадрат за скруглённым выпадающим списком.
+
+    Список Qt кладёт в отдельное окно-контейнер. Контейнер прямоугольный,
+    заливается фоном окна (общее правило QWidget в таблице стилей), а
+    Windows рисует под ним прямоугольную тень, — поэтому скруглённая
+    карточка списка стояла на заметном тёмном квадрате. Контейнер делается
+    прозрачным и без системной тени: скругление и рамку рисует сам список
+    (правило «QComboBox QAbstractItemView»), а фон контейнеру снимает
+    правило QFrame#ComboPopup.
+    """
+    container = combo.view().window()
+    if container is combo.window():
+        return  # контейнер ещё не создан — показывать нечего
+    container.setObjectName("ComboPopup")
+    container.setWindowFlags(container.windowFlags()
+                             | Qt.WindowType.FramelessWindowHint
+                             | Qt.WindowType.NoDropShadowWindowHint)
+    container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+
 class ButtonCursorFilter(QObject):
     """Курсор подсказывает состояние: «рука» у доступной кнопки и
     «запрещено» у недоступной."""

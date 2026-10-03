@@ -511,6 +511,14 @@ QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
     selection-background-color: $accent;
 }
 
+/* Список — обычный, под полем, а не «меню» поверх него. В режиме меню
+   окно-контейнер списка само закрашивает себя прямоугольной панелью из
+   палитры и таблицу стилей не слушает: за скруглённой карточкой торчал
+   квадрат. Заодно Qt начинает учитывать предел высоты списка. */
+QComboBox {
+    combobox-popup: 0;
+}
+
 QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover, QLineEdit:hover {
     border: 1px solid $input_border_hover;
 }
@@ -540,6 +548,14 @@ QComboBox::down-arrow {
 
 QComboBox::down-arrow:disabled {
     image: url("$arrow_down_off_icon");
+}
+
+/* Окно-контейнер выпадающего списка прозрачно (см. widgets.round_combo_popup):
+   скругление и рамку рисует сам список, а без этого правила контейнер
+   заливался фоном окна, и за скруглёнными углами торчал квадрат. */
+QFrame#ComboPopup {
+    background: transparent;
+    border: none;
 }
 
 /* Выпадающий список: своя карточка со скруглением и «воздухом» вокруг
@@ -694,6 +710,14 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 
 QScrollBar::add-page, QScrollBar::sub-page {
     background: $surface;
+}
+
+/* Полоса прокрутки длинного выпадающего списка — цвета самого списка,
+   иначе по его правому краю шла полоса цвета карточки. */
+QComboBox QAbstractItemView QScrollBar:vertical,
+QComboBox QAbstractItemView QScrollBar::add-page,
+QComboBox QAbstractItemView QScrollBar::sub-page {
+    background: $popup_bg;
 }
 
 QScrollBar::handle:vertical {
