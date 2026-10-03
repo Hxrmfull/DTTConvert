@@ -24,7 +24,7 @@ app.setStyleSheet(build_stylesheet())
 QMessageBox.warning = staticmethod(lambda *a, **k: None)
 QMessageBox.information = staticmethod(lambda *a, **k: None)
 
-from language_pin import pin_language
+from language_pin import pin_language, release_windows
 pin_language()  # ширина подписей зависит от языка
 
 from main_window import MainWindow
@@ -98,8 +98,12 @@ def run():
         print("перекрытий нет")
     w.close()
     app.processEvents()
-    app.quit()
-    sys.exit(1 if problems else 0)
+    # Цикл завершается кодом через app.exit, а sys.exit — уже после него:
+    # sys.exit прямо из обработчика таймера выходил из Python, пока цикл
+    # событий Qt ещё на стеке, и процесс изредка падал при завершении.
+    app.exit(1 if problems else 0)
 
 QTimer.singleShot(700, run)
-sys.exit(app.exec())
+exit_code = app.exec()
+release_windows()
+sys.exit(exit_code)

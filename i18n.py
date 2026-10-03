@@ -512,13 +512,19 @@ STRINGS = {
     "preview_empty": ("Выберите файл в очереди — здесь появится предпросмотр",
                       "Select a file in the queue to see a preview here"),
     "preview_video_note": ("кадр из видео", "a frame from the video"),
-    "preview_user": ("зритель", "viewer"),
     "preview_msg_twitch": ("отличная игра", "great play"),
     "preview_msg_discord": ("смотрите, что получилось", "look what I made"),
-    "preview_msg_telegram": ("новый стикер", "new sticker"),
+    # Пишется над крупным эмодзи, как в настоящем Telegram (у стикеров
+    # подписи нет).
+    "preview_msg_telegram": ("оцени новый эмодзи", "rate my new emoji"),
     "preview_msg_whatsapp": ("держи", "here you go"),
     "preview_zoom": ("крупно", "zoomed"),
-    "preview_today": ("Сегодня в 12:00", "Today at 12:00"),
+    "preview_today": ("Сегодня в {time}", "Today at {time}"),
+    # Низ чата Twitch: поле ввода и строка баллов канала.
+    "preview_send_message": ("Отправить сообщение", "Send a message"),
+    "preview_chat_button": ("Чат", "Chat"),
+    # Разряды по-русски разделяет узкий неразрывный пробел.
+    "preview_points_balance": ("1\u202f129\u202f994", "1,129,994"),
     "preview_pack": ("Мой набор стикеров", "My sticker pack"),
 
     # --- проверка обновлений ---

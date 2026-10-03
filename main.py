@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 
+from PyQt6 import sip
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -74,7 +75,14 @@ def main():
     window.log_path = log_path
     window.show()
 
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    # Окно удаляется явно, пока приложение ещё живо. Иначе их разбирает
+    # сам Python при выходе из main() в произвольном порядке: если
+    # QApplication уходит раньше окна, Qt изредка падает (access violation)
+    # уже после закрытия — настройки сохранены, но процесс завершается
+    # аварийно. Найдено по тестам: около одного запуска из пятнадцати.
+    sip.delete(window)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

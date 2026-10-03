@@ -736,6 +736,57 @@ def t_combo_popup_corners():
 check("выпадающие списки без квадрата за скруглёнными углами", t_combo_popup_corners)
 
 
+def t_twitch_preview_uses_user_icons():
+    from chat_preview import (ChatPreview, PADDING, TWITCH_BADGE_SIZE,
+                              TWITCH_BALANCE_HEIGHT)
+    green = QImage(64, 64, QImage.Format.Format_ARGB32)
+    green.fill(QColor("#00ff00"))
+
+    def render(code):
+        preview = ChatPreview("twitch"); preview.resize(470, 170)
+        preview.set_preset(code, False); preview.set_image(green)
+        return preview.grab().toImage()
+
+    def green_pixels(image, x0, y0, x1, y1):
+        return sum(image.pixelColor(x, y).green() > 200 and image.pixelColor(x, y).red() < 60
+                   for y in range(y0, y1) for x in range(x0, x1))
+
+    badge_box = (PADDING, PADDING, PADDING + TWITCH_BADGE_SIZE, PADDING + 24)
+    balance_box = (PADDING, 170 - PADDING - TWITCH_BALANCE_HEIGHT, 200, 170 - PADDING)
+    plain = render("twitch_static_112")
+    # По умолчанию у ников нарисованные значки, а не картинка пользователя.
+    assert green_pixels(plain, *badge_box) == 0
+    assert green_pixels(plain, *balance_box) == 0
+    # Пресет значка — картинка пользователя на месте значка у ника.
+    assert green_pixels(render("twitch_badge_pack"), *badge_box) > 100
+    # Пресет баллов — в строке баллов под полем ввода.
+    assert green_pixels(render("twitch_points_pack"), *balance_box) > 100
+check("предпросмотр Twitch: свой значок и иконка баллов встают на место стандартных",
+      t_twitch_preview_uses_user_icons)
+
+
+def t_spinbox_text_fits():
+    from PyQt6.QtWidgets import QAbstractSpinBox
+    from main_window import TAB_MAIN, TAB_TELEGRAM
+    for language in ("ru", "en"):
+        win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+        win.language_combo.setCurrentIndex(win.language_combo.findData(language)); settle(100)
+        # Длинные, но реальные значения: конец обрезки у ролика на
+        # пару часов, начало фрагмента Telegram у часового видео.
+        win.trim_end_spin.setValue(9999.99); win.trim_start_spin.setValue(9999.5)
+        win.tg_start_spin.setMaximum(3600.0); win.tg_start_spin.setValue(3599.9)
+        for tab in (TAB_MAIN, TAB_TELEGRAM):
+            win.settings_tabs.setCurrentIndex(tab); settle(260)
+            for spin in win.settings_tabs.currentWidget().findChildren(QAbstractSpinBox):
+                edit = spin.lineEdit()
+                need = edit.fontMetrics().horizontalAdvance(edit.text())
+                # Кнопки счётчика не должны съедать текст: «0,00 сек» целиком.
+                assert edit.width() >= need, (language, edit.text(), edit.width(), need)
+        win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(50)
+        win.close()
+check("текст в полях чисел не обрезается кнопками", t_spinbox_text_fits)
+
+
 def idle_status_text():
     from main_window import idle_status
     return idle_status()

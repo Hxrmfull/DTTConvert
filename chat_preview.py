@@ -10,9 +10,11 @@ Telegram и WhatsApp отдельно в переписке. Так сразу �
 экране. Лимиты веса здесь не проверяются — это дело обработки.
 """
 
-from PyQt6.QtCore import QRectF, QSize, Qt
+import math
+
+from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
 from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QImage, QMovie, QPainter,
-                         QPainterPath, QPixmap, QTransform)
+                         QPainterPath, QPen, QPixmap, QPolygonF, QTransform)
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from i18n import tr
@@ -28,13 +30,25 @@ PADDING = 12
 CAPTION_PX = 11
 # Высота строки под подписью «крупно».
 CAPTION_HEIGHT = 16
+# Время у сообщений во всех сценах.
+PREVIEW_TIME = "18:04"
+
+# Чат Twitch: значок у ника, иконка баллов, поле ввода и строка баллов.
+TWITCH_BADGE_SIZE = 18
+TWITCH_POINTS_SIZE = 20
+TWITCH_INPUT_HEIGHT = 30
+TWITCH_BALANCE_HEIGHT = 22
+# Цвета ников «twitch» и «DJClancy».
+TWITCH_NAME_COLORS = ("#bf94ff", "#00b5ad")
 
 # Цвета сцен — из тёмных тем самих площадок, чтобы макет узнавался.
 SCENES = {
     "twitch": {"bg": "#0e0e10", "panel": "#18181b", "text": "#efeff1",
-               "muted": "#adadb8", "name": "#bf94ff", "accent": "#9146ff"},
+               "muted": "#adadb8", "name": "#bf94ff", "accent": "#9146ff",
+               "input": "#26262c"},
+    # Пишет сам «Discord» — ник белый, как у аккаунта без цветной роли.
     "discord": {"bg": "#313338", "panel": "#2b2d31", "text": "#dbdee1",
-                "muted": "#949ba4", "name": "#f0b232", "accent": "#5865f2"},
+                "muted": "#949ba4", "name": "#f2f3f5", "accent": "#5865f2"},
     "telegram": {"bg": "#0e1621", "panel": "#182533", "text": "#f5f5f5",
                  # Приглушённый текст светлее, чем в самом Telegram: #6d7f8f
                  # давал 3,8 на пузыре сообщения — меньше AA.
@@ -48,6 +62,186 @@ INACTIVE_OPACITY = 0.3
 
 SHAPE_SQUARE = "square"
 SHAPE_STICKER = "sticker"
+
+
+# --- нарисованные значки сцен ---
+# Рисуются кодом, а не картинками из файлов: так нет сторонних ресурсов,
+# и значки чёткие при любом масштабе экрана.
+
+def _scaled(rect, points):
+    """Точки в долях квадрата rect (0..1) → координаты на экране."""
+    return [QPointF(rect.left() + x * rect.width(), rect.top() + y * rect.height())
+            for x, y in points]
+
+
+def draw_twitch_gem_badge(painter, rect):
+    """Значок «twitch»: белый алмаз на малиновом скруглённом квадрате."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#e00ab8"))
+    radius = rect.width() * 0.18
+    painter.drawRoundedRect(rect, radius, radius)
+    gem = QPolygonF(_scaled(rect, ((0.33, 0.27), (0.67, 0.27), (0.81, 0.43),
+                                   (0.5, 0.79), (0.19, 0.43))))
+    painter.setBrush(QColor("#ffffff"))
+    painter.drawPolygon(gem)
+    # Грань алмаза — тонкая линия цвета подложки, иначе это просто пятиугольник.
+    pen = QPen(QColor("#e00ab8"), max(1.0, rect.width() * 0.06))
+    painter.setPen(pen)
+    left, right = _scaled(rect, ((0.22, 0.43), (0.78, 0.43)))
+    painter.drawLine(left, right)
+    painter.restore()
+
+
+def draw_twitch_verified_badge(painter, rect):
+    """Значок «DJClancy»: белая галочка на фиолетовой «печати» с зубцами."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    centre = rect.center()
+    outer, inner = rect.width() / 2, rect.width() / 2 * 0.86
+    points = []
+    teeth = 8
+    for index in range(teeth * 2):
+        angle = math.pi * index / teeth - math.pi / 2
+        radius = outer if index % 2 == 0 else inner
+        points.append(QPointF(centre.x() + radius * math.cos(angle),
+                              centre.y() + radius * math.sin(angle)))
+    seal = QPolygonF(points)
+    color = QColor("#9146ff")
+    # Обводка тем же цветом со скруглёнными стыками скругляет и зубцы.
+    pen = QPen(color, rect.width() * 0.08)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(color)
+    painter.drawPolygon(seal)
+    check = QPen(QColor("#ffffff"), rect.width() * 0.13)
+    check.setCapStyle(Qt.PenCapStyle.RoundCap)
+    check.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(check)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    path = QPainterPath()
+    start, middle, end = _scaled(rect, ((0.31, 0.52), (0.45, 0.65), (0.70, 0.37)))
+    path.moveTo(start)
+    path.lineTo(middle)
+    path.lineTo(end)
+    painter.drawPath(path)
+    painter.restore()
+
+
+def draw_twitch_bits(painter, rect):
+    """Битсы Twitch — фиолетовый кристалл-треугольник."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#a970ff"))
+    painter.drawPolygon(QPolygonF(_scaled(rect, ((0.5, 0.05), (0.92, 0.62),
+                                                 (0.5, 0.95), (0.08, 0.62)))))
+    painter.setBrush(QColor("#d2b8ff"))
+    painter.drawPolygon(QPolygonF(_scaled(rect, ((0.5, 0.05), (0.5, 0.95),
+                                                 (0.08, 0.62)))))
+    painter.restore()
+
+
+def draw_twitch_points(painter, rect, color):
+    """Стандартная иконка баллов канала: кольцо с «искрой» внутри.
+
+    Её заменяет иконка, которую пользователь делает пресетом баллов."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    width = max(1.5, rect.width() * 0.11)
+    painter.setPen(QPen(color, width))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    inset = width / 2 + rect.width() * 0.04
+    painter.drawEllipse(rect.adjusted(inset, inset, -inset, -inset))
+    spark = QPainterPath()
+    centre = rect.center()
+    size = rect.width() * 0.2
+    spark.moveTo(centre.x(), centre.y() - size)
+    spark.quadTo(centre.x(), centre.y(), centre.x() + size, centre.y())
+    spark.quadTo(centre.x(), centre.y(), centre.x(), centre.y() + size)
+    spark.quadTo(centre.x(), centre.y(), centre.x() - size, centre.y())
+    spark.quadTo(centre.x(), centre.y(), centre.x(), centre.y() - size)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    painter.drawPath(spark)
+    painter.restore()
+
+
+def draw_smiley_outline(painter, rect, color):
+    """Кнопка выбора смайликов в поле ввода — контурная улыбка."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(color, 1.6)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawEllipse(rect.adjusted(0.8, 0.8, -0.8, -0.8))
+    w, h = rect.width(), rect.height()
+    painter.drawArc(QRectF(rect.left() + w * 0.28, rect.top() + h * 0.30, w * 0.44, h * 0.42),
+                    200 * 16, 140 * 16)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    for x in (0.36, 0.64):
+        painter.drawEllipse(QPointF(rect.left() + w * x, rect.top() + h * 0.40),
+                            w * 0.07, w * 0.07)
+    painter.restore()
+
+
+def draw_gear_outline(painter, rect, color):
+    """Шестерёнка настроек чата."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    centre = rect.center()
+    outer, inner = rect.width() * 0.48, rect.width() * 0.36
+    points = []
+    teeth = 8
+    for index in range(teeth * 4):
+        angle = 2 * math.pi * index / (teeth * 4)
+        radius = outer if index % 4 in (0, 1) else inner
+        points.append(QPointF(centre.x() + radius * math.cos(angle),
+                              centre.y() + radius * math.sin(angle)))
+    pen = QPen(color, 1.5)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawPolygon(QPolygonF(points))
+    painter.drawEllipse(centre, rect.width() * 0.15, rect.width() * 0.15)
+    painter.restore()
+
+
+def draw_discord_avatar(painter, rect, color):
+    """Аватар «пользователя Discord»: белый Clyde на круге фирменного цвета."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    painter.drawEllipse(rect)
+    # Логотип вписан в прямоугольник 0,6 × 0,46 диаметра по центру.
+    w, h = rect.width() * 0.6, rect.width() * 0.46
+    left = rect.center().x() - w / 2
+    top = rect.center().y() - h / 2
+
+    def at(x, y):
+        return QPointF(left + x * w, top + y * h)
+
+    clyde = QPainterPath(at(0.27, 0.04))
+    clyde.cubicTo(at(0.40, -0.03), at(0.60, -0.03), at(0.73, 0.04))
+    clyde.cubicTo(at(0.87, 0.10), at(0.98, 0.42), at(1.0, 0.83))
+    clyde.cubicTo(at(0.93, 0.93), at(0.85, 0.99), at(0.77, 1.0))
+    clyde.lineTo(at(0.70, 0.87))
+    clyde.cubicTo(at(0.57, 0.92), at(0.43, 0.92), at(0.30, 0.87))
+    clyde.lineTo(at(0.23, 1.0))
+    clyde.cubicTo(at(0.15, 0.99), at(0.07, 0.93), at(0.0, 0.83))
+    clyde.cubicTo(at(0.02, 0.42), at(0.13, 0.10), at(0.27, 0.04))
+    clyde.closeSubpath()
+    painter.setBrush(QColor("#ffffff"))
+    painter.drawPath(clyde)
+    painter.setBrush(color)
+    for x in (0.35, 0.65):
+        painter.drawEllipse(at(x, 0.56), w * 0.085, h * 0.13)
+    painter.restore()
+
 
 
 def render_emote(image, size, shape=SHAPE_SQUARE, fill=False, device_ratio=1.0):
@@ -293,61 +487,136 @@ class ChatPreview(QWidget):
         return x - 12
 
     def _paint_twitch(self, painter, rect, scene):
+        """Чат Twitch: две строки сообщений, поле ввода и строка баллов.
+
+        Значки у ников нарисованы по умолчанию (алмаз у «twitch», галочка у
+        «DJClancy»); пресет значка подписки ставит на их место картинку
+        пользователя. Пресет баллов — в строку под полем ввода, туда, где
+        Twitch показывает иконку баллов канала рядом с их числом.
+        """
         code = self._code
-        if code == "twitch_badge_pack":
-            badge, inline, zoom = 18, 0, 72
+        badge_preset = code == "twitch_badge_pack"
+        points_preset = code == "twitch_points_pack"
+        if badge_preset:
+            inline, zoom = 0, 72
+        elif points_preset:
+            inline, zoom = 0, 112
         elif code == "seventv_emote":
-            badge, inline, zoom = 0, 32, 128
+            inline, zoom = 32, 128
         else:
-            badge, inline, zoom = 0, 28, 112
+            inline, zoom = 28, 112
         right = self._zoom_tile(painter, rect, scene, zoom)
-        line_height = max(28, inline)
-        y = rect.top() + PADDING + 6
+        chat = QRectF(rect.left() + PADDING, rect.top() + PADDING,
+                      right - rect.left() - PADDING, rect.height() - PADDING * 2)
+        line_height = max(TWITCH_BADGE_SIZE + 6, inline)
+        messages_height = line_height * 2 + 6
+        bottom_height = TWITCH_INPUT_HEIGHT + 6 + TWITCH_BALANCE_HEIGHT
+        # Когда окно невысокое, всё не помещается: остаётся то, ради чего
+        # пресет, — строка баллов для иконки баллов, сообщения для остальных.
+        fits_both = chat.height() >= messages_height + 8 + bottom_height
+        if fits_both or not points_preset:
+            self._twitch_messages(painter, chat, scene, line_height, inline, badge_preset)
+        if fits_both or (points_preset and chat.height() >= bottom_height):
+            self._twitch_bottom(painter, chat, scene, inline, points_preset)
+
+    def _twitch_messages(self, painter, chat, scene, line_height, inline, badge_preset):
         name_font = self._font(13, bold=True)
         text_font = self._font(13)
         baseline_shift = (line_height + QFontMetrics(text_font).ascent()) / 2 - 2
-        for row in range(2):
-            x = rect.left() + PADDING
-            if badge:
-                painter.drawPixmap(int(x), int(y + (line_height - 18) / 2), self._emote(18))
-                x += 22
+        rows = (("twitch", TWITCH_NAME_COLORS[0], draw_twitch_gem_badge),
+                ("DJClancy", TWITCH_NAME_COLORS[1], draw_twitch_verified_badge))
+        y = chat.top()
+        for row, (name, color, draw_badge) in enumerate(rows):
+            if y + line_height > chat.bottom() + 1:
+                break
+            x = chat.left()
+            badge_rect = QRectF(x, y + (line_height - TWITCH_BADGE_SIZE) / 2,
+                                TWITCH_BADGE_SIZE, TWITCH_BADGE_SIZE)
+            if badge_preset:
+                # Значок, который делает пользователь, — на месте стандартного.
+                painter.drawPixmap(badge_rect.topLeft().toPoint(),
+                                   self._emote(TWITCH_BADGE_SIZE))
             else:
-                painter.setBrush(QColor(scene["accent"]))
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawRoundedRect(QRectF(x, y + (line_height - 16) / 2, 16, 16), 3, 3)
-                x += 20
-            name = tr("preview_user") + (str(row + 1) if row else "")
-            x = self._draw_text(painter, x, y + baseline_shift, name,
-                                scene["name"] if not row else "#00b5ad", name_font)
+                draw_badge(painter, badge_rect)
+            x += TWITCH_BADGE_SIZE + 4
+            x = self._draw_text(painter, x, y + baseline_shift, name, color, name_font)
             x = self._draw_text(painter, x, y + baseline_shift, ": ", scene["text"], text_font)
             if row == 0 or not inline:
                 x = self._draw_text(painter, x, y + baseline_shift,
                                     tr("preview_msg_twitch") + " ", scene["text"], text_font)
-            if inline and x + inline < right:
+            emotes = 1 if row == 0 else 2
+            for _ in range(emotes if inline else 0):
+                if x + inline > chat.right():
+                    break
                 painter.drawPixmap(int(x), int(y + (line_height - inline) / 2),
                                    self._emote(inline))
-                if row:
-                    x += inline + 4
-                    if x + inline < right:
-                        painter.drawPixmap(int(x), int(y + (line_height - inline) / 2),
-                                           self._emote(inline))
-            y += line_height + 8
-            if y + line_height > rect.bottom() - PADDING:
-                break
+                x += inline + 4
+            y += line_height + 6
+
+    def _twitch_bottom(self, painter, chat, scene, inline, points_preset):
+        """Поле «Отправить сообщение» и строка баллов, как под чатом Twitch."""
+        top = chat.bottom() - TWITCH_INPUT_HEIGHT - 6 - TWITCH_BALANCE_HEIGHT
+        field = QRectF(chat.left(), top, chat.width(), TWITCH_INPUT_HEIGHT)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(scene["input"]))
+        painter.drawRoundedRect(field, 6, 6)
+        icon = 20
+        icon_y = field.top() + (field.height() - icon) / 2
+        x = field.left() + 6
+        if inline:
+            # Слева в поле Twitch показывает смайлик — пусть это будет свой.
+            painter.drawPixmap(int(x), int(icon_y), self._emote(icon))
+        else:
+            draw_smiley_outline(painter, QRectF(x + 2, icon_y + 2, icon - 4, icon - 4),
+                                QColor(scene["muted"]))
+        x += icon + 8
+        text_font = self._font(13)
+        baseline = field.top() + (field.height() + QFontMetrics(text_font).ascent()) / 2 - 2
+        self._draw_text(painter, x, baseline, tr("preview_send_message"), scene["muted"],
+                        text_font)
+        draw_smiley_outline(painter, QRectF(field.right() - 24, icon_y + 2, 16, 16),
+                            QColor(scene["muted"]))
+
+        row = QRectF(chat.left(), field.bottom() + 6, chat.width(), TWITCH_BALANCE_HEIGHT)
+        small_font = self._font(12, bold=True)
+        baseline = row.top() + (row.height() + QFontMetrics(small_font).ascent()) / 2 - 2
+        x = row.left() + 2
+        draw_twitch_bits(painter, QRectF(x, row.top() + 4, 14, 14))
+        x = self._draw_text(painter, x + 18, baseline, "0", scene["text"], small_font) + 14
+        points_rect = QRectF(x, row.top() + (row.height() - TWITCH_POINTS_SIZE) / 2,
+                             TWITCH_POINTS_SIZE, TWITCH_POINTS_SIZE)
+        if points_preset:
+            # Иконка баллов пользователя — на месте стандартной.
+            painter.drawPixmap(points_rect.topLeft().toPoint(), self._emote(TWITCH_POINTS_SIZE))
+        else:
+            draw_twitch_points(painter, points_rect, QColor(scene["text"]))
+        self._draw_text(painter, x + TWITCH_POINTS_SIZE + 5, baseline,
+                        tr("preview_points_balance"), scene["text"], small_font)
+
+        button_font = self._font(12, bold=True)
+        label = tr("preview_chat_button")
+        width = QFontMetrics(button_font).horizontalAdvance(label) + 20
+        button = QRectF(row.right() - width, row.top(), width, row.height())
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(scene["accent"]))
+        painter.drawRoundedRect(button, 4, 4)
+        painter.setFont(button_font)
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(button, int(Qt.AlignmentFlag.AlignCenter), label)
+        draw_gear_outline(painter, QRectF(button.left() - 26, row.top() + 3, 16, 16),
+                          QColor(scene["muted"]))
 
     def _paint_discord(self, painter, rect, scene):
         sticker = self._code.startswith("discord_sticker")
         x0 = rect.left() + PADDING
         y = rect.top() + PADDING
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(scene["accent"]))
-        painter.drawEllipse(QRectF(x0, y, 36, 36))
+        # Сообщение от «пользователя Discord» с логотипом вместо аватара.
+        draw_discord_avatar(painter, QRectF(x0, y, 36, 36), QColor(scene["accent"]))
         x = x0 + 48
         name_font = self._font(13, bold=True)
-        x_after = self._draw_text(painter, x, y + 13, tr("preview_user"), scene["name"],
-                                  name_font)
-        self._draw_text(painter, x_after + 8, y + 13, tr("preview_today"), scene["muted"],
-                        self._font(CAPTION_PX))
+        x_after = self._draw_text(painter, x, y + 13, "Discord", scene["name"], name_font)
+        self._draw_text(painter, x_after + 8, y + 13, tr("preview_today", time=PREVIEW_TIME),
+                        scene["muted"], self._font(CAPTION_PX))
         available = rect.bottom() - PADDING - (y + 22)
         if sticker:
             side = int(min(160, available))
@@ -363,17 +632,20 @@ class ChatPreview(QWidget):
             painter.drawPixmap(int(x), int(line_y + 28), self._emote(jumbo))
         self._zoom_tile(painter, rect, scene, 128)
 
-    def _time_pill(self, painter, x, y, scene):
+    def _time_pill(self, painter, x, y, scene, background=None):
+        """Время сообщения в «таблетке», правый нижний угол — в (x, y).
+
+        На картинке (стикер) — полупрозрачная тёмная, как в самих
+        мессенджерах; рядом с картинкой — цвета пузыря (background)."""
         font = self._font(CAPTION_PX)
-        text = "12:00"
-        width = QFontMetrics(font).horizontalAdvance(text) + 10
+        width = QFontMetrics(font).horizontalAdvance(PREVIEW_TIME) + 12
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 120))
-        painter.drawRoundedRect(QRectF(x - width, y - 16, width, 16), 8, 8)
+        painter.setBrush(QColor(background) if background else QColor(0, 0, 0, 120))
+        painter.drawRoundedRect(QRectF(x - width, y - 18, width, 18), 9, 9)
         painter.setFont(font)
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(QRectF(x - width, y - 16, width, 16),
-                         int(Qt.AlignmentFlag.AlignCenter), text)
+        painter.setPen(QColor(scene["text"]) if background else QColor("#ffffff"))
+        painter.drawText(QRectF(x - width, y - 18, width, 18),
+                         int(Qt.AlignmentFlag.AlignCenter), PREVIEW_TIME)
 
     def _paint_telegram(self, painter, rect, scene):
         available = rect.height() - PADDING * 2
@@ -387,23 +659,31 @@ class ChatPreview(QWidget):
             self._time_pill(painter, x + pixmap.width() / ratio,
                             y + pixmap.height() / ratio, scene)
             return
-        # Эмодзи: строкой в сообщении и крупным, как одиночное сообщение.
+        # Эмодзи — как в Telegram: строкой в сообщении («оцени новый эмодзи»
+        # с временем внутри пузыря) и следом крупным, отдельным сообщением
+        # без пузыря, с временем в таблетке справа.
         text_font = self._font(13)
+        time_font = self._font(CAPTION_PX)
         text = tr("preview_msg_telegram") + " "
-        width = QFontMetrics(text_font).horizontalAdvance(text) + 20 + 24
-        bubble = QRectF(rect.left() + PADDING, rect.top() + PADDING, width + 16, 40)
+        inline = 20
+        text_width = QFontMetrics(text_font).horizontalAdvance(text)
+        time_width = QFontMetrics(time_font).horizontalAdvance(PREVIEW_TIME)
+        bubble = QRectF(rect.left() + PADDING, rect.top() + PADDING,
+                        12 + text_width + inline + 10 + time_width + 10, 34)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(scene["panel"]))
         painter.drawRoundedRect(bubble, 12, 12)
-        end = self._draw_text(painter, bubble.left() + 12, bubble.top() + 25, text,
+        end = self._draw_text(painter, bubble.left() + 12, bubble.top() + 22, text,
                               scene["text"], text_font)
-        painter.drawPixmap(int(end), int(bubble.top() + 10), self._emote(20))
-        big = int(min(100, available - 50))
+        painter.drawPixmap(int(end), int(bubble.top() + 7), self._emote(inline))
+        self._draw_text(painter, bubble.right() - 10 - time_width, bubble.top() + 24,
+                        PREVIEW_TIME, scene["muted"], time_font)
+        big = int(min(100, available - bubble.height() - 8))
         if big >= 32:
             x = bubble.left()
             y = bubble.bottom() + 8
             painter.drawPixmap(int(x), int(y), self._emote(big))
-            self._time_pill(painter, x + big + 44, y + big, scene)
+            self._time_pill(painter, x + big + 54, y + big, scene, background=scene["panel"])
 
     def _paint_whatsapp(self, painter, rect, scene):
         available = rect.height() - PADDING * 2

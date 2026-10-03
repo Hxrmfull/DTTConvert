@@ -542,7 +542,7 @@ QComboBox::drop-down {
 QComboBox::down-arrow {
     image: url("$arrow_down_icon");
     width: 10px;
-    height: 7px;
+    height: 6px;
     margin-right: 8px;
 }
 
@@ -598,46 +598,66 @@ QComboBox QAbstractItemView::item:disabled {
 }
 
 /* Счётчики: стрелки вверх/вниз, иначе поле выглядит как обычный ввод. */
-QSpinBox::up-button, QDoubleSpinBox::up-button {
+/* Кнопки счётчика — тонкие «шевроны» внутри поля, а не серая колонка
+   с перегородкой и заливными треугольниками: та выглядела чужеродно
+   рядом со скруглёнными полями. Кнопки прозрачные и подсвечиваются
+   только под курсором. Ширина и высота поля прежние, место под кнопки
+   Qt сам вычитает из поля текста — вёрстка вкладок не сдвигается.
+   Отдельный padding-right не нужен: он резервировал место второй раз,
+   и в узких полях «0,00 сек» обрезалось до «0,00». */
+
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
     subcontrol-origin: border;
+    /* 16 + 3 отступа — почти прежние 18: шире — и в узких полях
+       «Начало/Конец» хвост «сек» уже не помещался. */
+    width: 16px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
     subcontrol-position: top right;
-    background-color: $hover_bg;
-    border-left: 1px solid $border_subtle;
-    border-top-right-radius: 6px;
-    width: 18px;
+    margin: 4px 3px 0 0;
 }
 
 QSpinBox::down-button, QDoubleSpinBox::down-button {
-    subcontrol-origin: border;
     subcontrol-position: bottom right;
-    background-color: $hover_bg;
-    border-left: 1px solid $border_subtle;
-    border-bottom-right-radius: 6px;
-    width: 18px;
+    margin: 0 3px 4px 0;
 }
 
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-    background-color: $button_hover_bg;
+    background: $button_hover_bg;
+}
+
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background: $button_pressed;
 }
 
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
     image: url("$arrow_up_icon");
-    width: 9px;
+    width: 10px;
     height: 6px;
 }
 
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
     image: url("$arrow_down_icon");
-    width: 9px;
+    width: 10px;
     height: 6px;
 }
 
-QSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:disabled {
+/* Шеврон гаснет и у выключенного поля, и на границе диапазона (:off):
+   видно, что дальше крутить некуда. */
+QSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:disabled,
+QSpinBox::up-arrow:off, QDoubleSpinBox::up-arrow:off {
     image: url("$arrow_up_off_icon");
 }
 
-QSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:disabled {
+QSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:disabled,
+QSpinBox::down-arrow:off, QDoubleSpinBox::down-arrow:off {
     image: url("$arrow_down_off_icon");
 }
 
@@ -816,32 +836,35 @@ QPushButton#UpdateButton:focus, QLabel#VersionLabel:focus {
 
 
 def _draw_arrow(path, color, pointing_down):
-    """Рисует маленький треугольник и сохраняет его в PNG для QSS."""
-    from PyQt6.QtCore import QPoint, Qt
-    from PyQt6.QtGui import QColor, QPainter, QPixmap, QPolygon
+    """Рисует шеврон (галочку-стрелку линией) и сохраняет его в PNG для QSS.
 
-    width, height = 18, 12
+    Раньше это был заливной треугольник — грубый рядом с тонким текстом.
+    Рисуется вдвое крупнее, чем показывается (20×12 → 10×6 в стилях):
+    на экранах с масштабом 150–200 % линия остаётся чёткой.
+    """
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
+
+    width, height = 20, 12
     pixmap = QPixmap(width, height)
     pixmap.fill(Qt.GlobalColor.transparent)
 
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(color))
-    margin_x, margin_y = 3, 3
+    pen = QPen(QColor(color), 2.6)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    margin_x, margin_y = 3.0, 2.5
+    top, bottom = margin_y, height - margin_y
     if pointing_down:
-        points = [
-            QPoint(margin_x, margin_y),
-            QPoint(width - margin_x, margin_y),
-            QPoint(width // 2, height - margin_y),
-        ]
+        tip, base = bottom, top
     else:
-        points = [
-            QPoint(margin_x, height - margin_y),
-            QPoint(width - margin_x, height - margin_y),
-            QPoint(width // 2, margin_y),
-        ]
-    painter.drawPolygon(QPolygon(points))
+        tip, base = top, bottom
+    chevron = QPainterPath(QPointF(margin_x, base))
+    chevron.lineTo(width / 2, tip)
+    chevron.lineTo(width - margin_x, base)
+    painter.drawPath(chevron)
     painter.end()
     pixmap.save(path, "PNG")
 
@@ -858,10 +881,12 @@ def _arrow_icon_paths(colors):
     assets_dir = os.path.join(tempfile.gettempdir(), "dttconvert_assets")
     os.makedirs(assets_dir, exist_ok=True)
     icons = {
-        "arrow_down_icon": ("arrow_down.png", colors["arrow"], True),
-        "arrow_up_icon": ("arrow_up.png", colors["arrow"], False),
-        "arrow_down_off_icon": ("arrow_down_off.png", colors["arrow_off"], True),
-        "arrow_up_off_icon": ("arrow_up_off.png", colors["arrow_off"], False),
+        # Имена другие, чем у прежних треугольников: сборка старой версии,
+        # запущенная рядом, пишет в ту же папку свои картинки.
+        "arrow_down_icon": ("chevron_down.png", colors["arrow"], True),
+        "arrow_up_icon": ("chevron_up.png", colors["arrow"], False),
+        "arrow_down_off_icon": ("chevron_down_off.png", colors["arrow_off"], True),
+        "arrow_up_off_icon": ("chevron_up_off.png", colors["arrow_off"], False),
     }
     paths = {}
     for key, (file_name, color, pointing_down) in icons.items():
