@@ -34,7 +34,15 @@ BASE_PALETTE = {
     "window_bg": "#1e1f26",
     "selected_bg": "#3a3d63",
     "accent_hover": "#7a72ff",
-    "check_border": "#4a4c60",
+    # Рамки полей и выключенного тумблера — не ниже 3:1 к фону карточки
+    # (WCAG 1.4.11): фон поля совпадает с карточкой, и поле узнаётся только
+    # по рамке. Было #3a3b48 и #4a4c60 — 1,4 и 1,8, поля почти терялись.
+    "check_border": "#6f7180",
+    "input_border": "#71727b",
+    "input_border_hover": "#86868e",
+    # Рамка элемента с фокусом клавиатуры. Белая, а не акцентная: акцентом
+    # уже обведены выбранный пресет и вкладка, и фокус на них был бы не виден.
+    "focus_ring": "#ffffff",
     "button_hover_bg": "#3d4060",
     "hover_border": "#565a80",
     "disabled_text": "#55566a",
@@ -42,7 +50,6 @@ BASE_PALETTE = {
     "accent_bright": "#8a83ff",
     "muted_text": "#a9abb8",
     "sunken_bg": "#202129",
-    "title_text": "#f5f5f7",
     "hint_text": "#9a9ba5",
     "section_text": "#8a8dfc",
     "tab_bg": "#292a34",
@@ -55,6 +62,12 @@ BASE_PALETTE = {
     "button_pressed": "#2a2c3e",
     "disabled_bg": "#232430",
     "disabled_border": "#34364a",
+    # Кнопка «Старт» — своя роль, а не accent: белый текст 14 px на #6c63ff
+    # давал 4,3 — меньше AA. При наведении кнопка темнеет, а не светлеет,
+    # иначе контраст падал до 3,7.
+    "start_bg": "#5b52f0",
+    "start_hover": "#4f46dc",
+    "start_border": "#7a72ff",
     "start_disabled_bg": "#2b2b3a",
     "start_disabled_text": "#6a6b7c",
     "stop_bg": "#4a2c33",
@@ -76,7 +89,6 @@ BASE_PALETTE = {
     # Было #7e808c: на фоне карточки контраст 3,9 — мелкий текст читался
     # с трудом. Теперь 4,6, по WCAG AA.
     "note_text": "#8a8c98",
-    "note_line": "#33343f",
     "bottom_line": "#2f3040",
     "faint_text": "#5f6070",
     "popup_bg": "#272834",
@@ -91,13 +103,20 @@ BASE_PALETTE = {
     "toggle_track_on_disabled": "#3a3760",
     "arrow": "#b9bbc9",
     "arrow_off": "#5f6070",
-    "format_header": "#74768a",
-    "drop_border": "#3f4152",
-    "drop_text": "#6f7180",
+    # Заголовки групп в списке форматов и подсказка пустой очереди: были
+    # #74768a и #6f7180 — около 3,2, меньше AA. Приглушённость заголовка
+    # теперь держится на мелком жирном начертании, а не на тусклом цвете.
+    "format_header": "#9a9ba5",
+    # Пунктир пустой очереди — граница зоны перетаскивания, нужно 3:1.
+    "drop_border": "#71727b",
+    "drop_text": "#9a9ba5",
     "drop_text_active": "#9a95ff",
-    "status_pending": "#6f7180",
-    "status_done": "#4caf7d",
-    "status_error": "#e05561",
+    # Точки состояния в очереди — не ниже 3:1 и к фону списка, и к
+    # выделенной строке: прежние серый и красный на выделении давали 2,2 и 2,8.
+    "status_pending": "#a3a4ae",
+    "status_processing": "#9a95ff",
+    "status_done": "#5cc98f",
+    "status_error": "#ff7a85",
     "status_stopped": "#c9a227",
     "warning_text": "#ff6b6b",
 }
@@ -121,9 +140,10 @@ PLATFORM_OVERRIDES = {
         "primary_bg": "#772ce8", "primary_hover": "#9146ff",
         "callout_bg": "#232327", "callout_text": "#c8c8d0",
         "caption_text": "#c3a8f5", "caption_line": "#3a3a3d",
-        "note_text": "#9b9ba8", "note_line": "#2f2f35",
+        "note_text": "#9b9ba8",
         "popup_bg": "#1f1f23", "popup_hover": "#2f2f35", "popup_selected": "#3f2a6b",
-        "check_border": "#53535f", "check_text": "#dedee3",
+        "check_border": "#666671", "check_text": "#dedee3",
+        "input_border": "#67676a", "input_border_hover": "#7d7d80",
         "section_text": "#bf94ff", "hint_text": "#adadb8",
         "toggle_track_off": "#35353b", "toggle_track_on_disabled": "#3b2d5c",
     },
@@ -141,9 +161,10 @@ PLATFORM_OVERRIDES = {
         "primary_bg": "#5865f2", "primary_hover": "#4752c4",
         "callout_bg": "#232428", "callout_text": "#c4c9ce",
         "caption_text": "#b5bac1", "caption_line": "#3f4147",
-        "note_text": "#9aa0aa", "note_line": "#3f4147",
+        "note_text": "#9aa0aa",
         "popup_bg": "#232428", "popup_hover": "#35373c", "popup_selected": "#404249",
-        "check_border": "#5c5f66", "check_text": "#dbdee1",
+        "check_border": "#75787f", "check_text": "#dbdee1",
+        "input_border": "#76787d", "input_border_hover": "#8d9094",
         "section_text": "#8891f7", "hint_text": "#b5bac1",
         "toggle_track_off": "#4e5058", "toggle_track_on_disabled": "#3a3f6e",
     },
@@ -161,9 +182,10 @@ PLATFORM_OVERRIDES = {
         "primary_bg": "#2b5278", "primary_hover": "#33608c",
         "callout_bg": "#1e2c3a", "callout_text": "#c0ccd8",
         "caption_text": "#8fa3b8", "caption_line": "#2b3a4a",
-        "note_text": "#8496a9", "note_line": "#2b3a4a",
+        "note_text": "#8496a9",
         "popup_bg": "#1e2833", "popup_hover": "#253445", "popup_selected": "#2b5278",
-        "check_border": "#3a4d63", "check_text": "#e1e6eb",
+        "check_border": "#5f6f80", "check_text": "#e1e6eb",
+        "input_border": "#646e7a", "input_border_hover": "#7a838d",
         "section_text": "#64b5ef", "hint_text": "#8fa3b8",
         "toggle_track_off": "#2b3a4a", "toggle_track_on_disabled": "#22405e",
     },
@@ -181,9 +203,10 @@ PLATFORM_OVERRIDES = {
         "primary_bg": "#005c4b", "primary_hover": "#006e5a",
         "callout_bg": "#1f2c33", "callout_text": "#c5ced3",
         "caption_text": "#99a8b1", "caption_line": "#2a3942",
-        "note_text": "#8f9ea8", "note_line": "#2a3942",
+        "note_text": "#8f9ea8",
         "popup_bg": "#233138", "popup_hover": "#2a3942", "popup_selected": "#005c4b",
-        "check_border": "#3b4a54", "check_text": "#d1d7db",
+        "check_border": "#5e6b73", "check_text": "#d1d7db",
+        "input_border": "#5e6a71", "input_border_hover": "#747f85",
         "section_text": "#25d366", "hint_text": "#99a8b1",
         "toggle_track_off": "#2a3942", "toggle_track_on_disabled": "#0b4a3e",
     },
@@ -218,10 +241,10 @@ QLabel {
     background: transparent;
 }
 
-QLabel#TitleLabel {
-    font-size: 16px;
-    font-weight: 600;
-    color: $title_text;
+/* Подпись выключенного поля гаснет вместе с ним: иначе «Ширина» и
+   «Начало» выглядели доступными, хотя поле рядом заперто. */
+QLabel:disabled {
+    color: $faint_text;
 }
 
 QLabel#HintLabel {
@@ -343,8 +366,8 @@ QPushButton:disabled {
 }
 
 QPushButton#StartButton {
-    background-color: $accent;
-    border: 1px solid $accent_hover;
+    background-color: $start_bg;
+    border: 1px solid $start_border;
     color: $bright_text;
     font-weight: 700;
     padding: 10px 20px;
@@ -352,7 +375,7 @@ QPushButton#StartButton {
 }
 
 QPushButton#StartButton:hover {
-    background-color: $accent_hover;
+    background-color: $start_hover;
 }
 
 QPushButton#StartButton:disabled {
@@ -394,11 +417,12 @@ QPushButton#PrimaryButton:hover {
     border-color: $accent_bright;
 }
 
-/* Убирающие/разрушительные действия — приглушены. */
+/* Убирающие/разрушительные действия — приглушены фоном и рамкой, но не
+   текстом: с серым текстом они выглядели выключенными. */
 QPushButton#QuietButton {
     background-color: $quiet_bg;
     border: 1px solid $border_subtle;
-    color: $muted_text;
+    color: $button_text;
 }
 
 QPushButton#QuietButton:hover {
@@ -441,40 +465,35 @@ QLabel#HintCallout {
    была просто мелкая серая строка, и она терялась среди самих настроек. */
 QLabel#GroupCaption {
     color: $caption_text;
-    font-size: 10px;
+    /* Было 10 px заглавными — на грани читаемости. 11 px прибавляют по
+       пикселю на заголовок; запас высоты на «Основной» это выдерживает. */
+    font-size: 11px;
     font-weight: 700;
     padding: 7px 0 3px 2px;
     border-bottom: 1px solid $caption_line;
     margin-bottom: 3px;
 }
 
-/* Пояснение мелким шрифтом — отделено полосой сверху, а не просто
-   брошено под кнопками. */
+/* Номер версии в углу. Был цвета выключенного текста (2,3:1), хотя это
+   не выключенный элемент, а сведения — теперь как у примечаний. */
 QLabel#VersionLabel {
-    color: $disabled_text;
+    color: $note_text;
     font-size: 11px;
     padding: 0 6px 6px 0;
 }
 
-QLabel#NoteLabel {
+/* Примечание под карточкой на вкладках площадок — на месте кнопок
+   применения, поэтому без верхней черты и с отступом как у кнопок. */
+QLabel#ApplyNote {
     color: $note_text;
     font-size: 11px;
-    border-top: 1px solid $note_line;
-    padding: 8px 3px 0 3px;
+    padding: 0 4px;
 }
 
 /* Нижняя панель отделена линией: раньше блок сохранения сливался
    с кнопками очереди, стоящими прямо над ним. */
 QWidget#BottomPanel {
     border-top: 1px solid $bottom_line;
-}
-
-QLabel#PreviewBox {
-    background-color: $sunken_bg;
-    border: 1px solid $card_border;
-    border-radius: 8px;
-    color: $faint_text;
-    font-size: 11px;
 }
 
 QLineEdit#ReadOnlyPath {
@@ -485,15 +504,31 @@ QLineEdit#ReadOnlyPath {
 
 QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
     background-color: $surface;
-    border: 1px solid $border_subtle;
+    border: 1px solid $input_border;
     border-radius: 6px;
     padding: 6px 8px;
     color: $text;
     selection-background-color: $accent;
 }
 
+/* Список — обычный, под полем, а не «меню» поверх него. В режиме меню
+   окно-контейнер списка само закрашивает себя прямоугольной панелью из
+   палитры и таблицу стилей не слушает: за скруглённой карточкой торчал
+   квадрат. Заодно Qt начинает учитывать предел высоты списка. */
+QComboBox {
+    combobox-popup: 0;
+}
+
 QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover, QLineEdit:hover {
-    border: 1px solid $hover_border;
+    border: 1px solid $input_border_hover;
+}
+
+/* Выключенное поле: тусклый текст и тусклая рамка. Без этого правила
+   запертое поле рисовалось тем же #e6e6e6, что и рабочее, и «Ширина: Авто»
+   при выключенном «Изменить разрешение» выглядела доступной. */
+QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QLineEdit:disabled {
+    color: $disabled_text;
+    border: 1px solid $border_subtle;
 }
 
 /* Стрелка выпадающего списка: без неё поле неотличимо от обычного ввода. */
@@ -513,6 +548,14 @@ QComboBox::down-arrow {
 
 QComboBox::down-arrow:disabled {
     image: url("$arrow_down_off_icon");
+}
+
+/* Окно-контейнер выпадающего списка прозрачно (см. widgets.round_combo_popup):
+   скругление и рамку рисует сам список, а без этого правила контейнер
+   заливался фоном окна, и за скруглёнными углами торчал квадрат. */
+QFrame#ComboPopup {
+    background: transparent;
+    border: none;
 }
 
 /* Выпадающий список: своя карточка со скруглением и «воздухом» вокруг
@@ -669,6 +712,14 @@ QScrollBar::add-page, QScrollBar::sub-page {
     background: $surface;
 }
 
+/* Полоса прокрутки длинного выпадающего списка — цвета самого списка,
+   иначе по его правому краю шла полоса цвета карточки. */
+QComboBox QAbstractItemView QScrollBar:vertical,
+QComboBox QAbstractItemView QScrollBar::add-page,
+QComboBox QAbstractItemView QScrollBar::sub-page {
+    background: $popup_bg;
+}
+
 QScrollBar::handle:vertical {
     background: $border_subtle;
     border-radius: 4px;
@@ -727,6 +778,39 @@ QPushButton#UpdateButton:hover {
 QLabel#WarningLabel {
     color: $warning_text;
     font-weight: 600;
+}
+
+/* Выключенные кнопки с #именем: правило по имени специфичнее общего
+   QPushButton:disabled, и без этого выключенная «Снять отметки» выглядела
+   рабочей — светлый текст и сплошная рамка. */
+QPushButton#QuietButton:disabled,
+QPushButton#PrimaryButton:disabled,
+QPushButton#PresetButton:disabled {
+    background-color: $disabled_bg;
+    color: $disabled_text;
+    border: 1px dashed $disabled_border;
+}
+
+/* Фокус клавиатуры. Правило в самом конце и с теми же #именами, что у
+   кнопок выше: при равной специфичности побеждает последнее, иначе рамку
+   фокуса перебивала бы рамка выбранного пресета или вкладки. Меняется
+   только цвет рамки — толщина та же, и вёрстка не сдвигается. Кнопки
+   получают фокус только с клавиатуры (Tab), поэтому после щелчка мышью
+   белой рамки нет. */
+QPushButton:focus,
+QPushButton#TabButton:focus,
+QPushButton#PresetButton:focus,
+QPushButton#PrimaryButton:focus,
+QPushButton#QuietButton:focus,
+QPushButton#StartButton:focus,
+QPushButton#StopButton:focus,
+QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
+    border-color: $focus_ring;
+}
+
+QPushButton#UpdateButton:focus, QLabel#VersionLabel:focus {
+    color: $focus_ring;
+    text-decoration: underline;
 }
 """)
 

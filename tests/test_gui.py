@@ -41,6 +41,8 @@ QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Y
 import main_window as mw
 from app_info import ORGANIZATION
 from main_window import MainWindow, DATA_ROLE, STATUS_ERROR, STATUS_DONE
+# Подтверждения окно задаёт своим _confirm («<действие> / Отмена»).
+MainWindow._confirm = lambda self, *a, **k: True
 def E(item): return item.data(DATA_ROLE)
 
 results=[]

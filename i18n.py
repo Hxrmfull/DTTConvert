@@ -33,7 +33,8 @@ STRINGS = {
     # --- кнопки очереди ---
     "add_files": ("Добавить файлы", "Add files"),
     "add_files_tip": ("Добавить файлы в очередь (Ctrl+O)", "Add files to the queue (Ctrl+O)"),
-    "remove_selected": ("Удалить выбранное", "Remove selected"),
+    # «Убрать», а не «Удалить»: «удалить» читалось как удаление с диска.
+    "remove_selected": ("Убрать выделенные", "Remove selected"),
     "remove_selected_tip": ("Убрать выделенные файлы из очереди (Delete)",
                            "Remove the selected files from the queue (Delete)"),
     "clear_list": ("Очистить список", "Clear list"),
@@ -55,20 +56,23 @@ STRINGS = {
                         "Ready-made Discord sticker and emoji presets"),
 
     # --- вкладка «Основная» ---
-    "output_format": ("Выходной формат:", "Output format:"),
-    "group_size": ("РАЗМЕР, ЧАСТОТА КАДРОВ И ДЛИТЕЛЬНОСТЬ",
-                   "SIZE, FRAME RATE AND DURATION"),
+    # Подписи полей — без двоеточий, как у «Поворот» и «Начало».
+    # «Размер» на вкладке значил три разные вещи: пиксели кадра, вес файла
+    # и заголовок группы. Теперь пиксели — «разрешение», мегабайты — «вес».
+    "output_format": ("Выходной формат", "Output format"),
+    "group_size": ("РАЗРЕШЕНИЕ, ЧАСТОТА КАДРОВ И ДЛИТЕЛЬНОСТЬ",
+                   "RESOLUTION, FRAME RATE AND DURATION"),
     "group_turn": ("ПОВОРОТ И ОТРАЖЕНИЕ", "ROTATION AND FLIP"),
-    "group_quality": ("КАЧЕСТВО, РАЗМЕР ФАЙЛА И ЗВУК",
+    "group_quality": ("КАЧЕСТВО, ВЕС ФАЙЛА И ЗВУК",
                       "QUALITY, FILE SIZE AND AUDIO"),
-    "resize": ("Изменить размер", "Resize"),
+    "resize": ("Изменить разрешение", "Resize"),
     "keep_aspect": ("Сохранять пропорции", "Keep aspect ratio"),
-    "width": ("Ширина (px):", "Width (px):"),
-    "height": ("Высота (px):", "Height (px):"),
+    "width": ("Ширина (px)", "Width (px)"),
+    "height": ("Высота (px)", "Height (px)"),
     "auto": ("Авто", "Auto"),
     "change_fps": ("Изменить FPS (видео и GIF)", "Change FPS (video and GIF)"),
-    "change_trim": ("Изменить длительность (видео, GIF и звук)",
-                    "Change duration (video, GIF and audio)"),
+    "change_trim": ("Обрезать по времени (видео, GIF и звук)",
+                    "Trim (video, GIF and audio)"),
     "trim_tip": ("Вырезать фрагмент: с какой секунды начать и на какой закончить.",
                  "Cut a fragment: which second to start at and which to end at."),
     "trim_start": ("Начало", "From"),
@@ -79,21 +83,23 @@ STRINGS = {
     "flip": ("Отражение", "Flip"),
     "rotate_none": ("Нет", "None"),
     "flip_none": ("Нет", "None"),
-    "flip_h": ("Слева направо", "Horizontal"),
-    "flip_v": ("Сверху вниз", "Vertical"),
-    "flip_both": ("Обе стороны", "Both"),
+    "flip_h": ("По горизонтали", "Horizontal"),
+    "flip_v": ("По вертикали", "Vertical"),
+    "flip_both": ("По обеим осям", "Both"),
     "set_quality": ("Задать качество", "Set quality"),
     "set_quality_tip": ("1 — самый маленький файл, 100 — лучшая картинка. "
                         "Без этого используются встроенные значения кодеков.",
                         "1 is the smallest file, 100 the best picture. "
                         "Left off, the codec defaults are used."),
-    "target_size": ("Уложить в размер", "Fit into size"),
-    "target_size_tip": ("Битрейт подбирается под указанный размер. Качество при этом "
-                        "не задаётся: размером управляет битрейт.",
-                        "The bitrate is chosen to hit the given size. Quality is not "
-                        "set in this mode: the bitrate drives the size."),
+    "target_size": ("Ограничить вес файла", "Limit file size"),
+    "target_size_tip": ("Битрейт подбирается так, чтобы файл весил не больше "
+                        "указанного. Качество при этом не задаётся: весом управляет "
+                        "битрейт.",
+                        "The bitrate is chosen so the file is no larger than the given "
+                        "size. Quality is not set in this mode: the bitrate drives the "
+                        "size."),
     "megabytes_suffix": (" МБ", " MB"),
-    "audio_track": ("Дорожка", "Audio"),
+    "audio_track": ("Звук", "Audio"),
     "audio_keep": ("Оставить", "Keep"),
     "audio_drop": ("Убрать", "Remove"),
     "audio_tip": ("«Убрать» выдаёт видео без звука — так же, как требуют стикеры.",
@@ -137,7 +143,7 @@ STRINGS = {
     "apply_selected": ("Применить к выделенным", "Apply to selected"),
     "apply_selected_tip": ("Применить настройки к выделенным (подсвеченным) файлам",
                            "Apply the settings to the selected (highlighted) files"),
-    "apply_selected_off": ("Недоступно: сначала выделите файлы в очереди мышью",
+    "apply_selected_off": ("Недоступно: сначала выделите файлы в очереди",
                            "Unavailable: select files in the queue first"),
     "apply_all": ("Применить ко всем", "Apply to all"),
     "apply_all_tip": ("Применить настройки ко всем файлам очереди",
@@ -148,13 +154,16 @@ STRINGS = {
                   "Restore the processing options and output folder to defaults"),
 
     # --- нижняя панель ---
-    "output_dir": ("Папка сохранения:", "Output folder:"),
+    "output_dir": ("Папка сохранения", "Output folder"),
     "output_dir_tip": ("Изменить можно кнопкой «Обзор…»",
                        "Change it with the “Browse…” button"),
-    "browse": ("Обзор...", "Browse..."),
-    "overwrite": ("Перезаписывать существующие файлы", "Overwrite existing files"),
-    "overwrite_tip": ("Выключено — рядом создаётся копия с суффиксом _1, _2 и т.д.",
-                      "When off, a copy with the suffix _1, _2 and so on is created."),
+    "browse": ("Обзор…", "Browse…"),
+    # Коротко: строка внизу окна тесная. Что значит «выключено» — в подсказке.
+    "overwrite": ("Перезаписывать файлы", "Overwrite files"),
+    "overwrite_tip": ("Включено — файл с тем же именем в папке сохранения заменяется. "
+                      "Выключено — рядом создаётся копия с суффиксом _1, _2 и т. д.",
+                      "On — a file with the same name in the output folder is replaced. "
+                      "Off — a copy with the suffix _1, _2 and so on is created."),
     "language": ("Язык", "Language"),
     "language_tip": ("Язык интерфейса", "Interface language"),
     "report_csv": ("Отчёт (CSV)", "Report (CSV)"),
@@ -169,8 +178,21 @@ STRINGS = {
     "stop_tip": ("Прервать обработку (Esc)", "Interrupt processing (Esc)"),
     "stop_off": ("Недоступно: обработка не запущена",
                  "Unavailable: processing is not running"),
-    "version_tip": ("{app} {version}\nДвойной клик — открыть папку с журналом",
-                    "{app} {version}\nDouble-click to open the log folder"),
+    "version_tip": ("{app} {version}\nДвойной щелчок — открыть папку журнала.\n"
+                    "Правый щелчок или Enter — меню.",
+                    "{app} {version}\nDouble-click to open the log folder.\n"
+                    "Right-click or Enter opens the menu."),
+    "tab_accessible": ("Вкладка {name}", "{name} tab"),
+    "queue_tip": ("Порядок обработки меняется перетаскиванием или Alt+↑ / Alt+↓. "
+                  "Обрабатываются только отмеченные галочкой файлы.",
+                  "Drag files or press Alt+↑ / Alt+↓ to change the processing order. "
+                  "Only checked files are processed."),
+    # Кнопки подтверждений называют действие, а не «Да/Нет»: стандартные
+    # кнопки Qt без его перевода выходили по-английски и в русском окне.
+    "btn_cancel": ("Отмена", "Cancel"),
+    "btn_reset": ("Сбросить", "Reset"),
+    "btn_create_frames": ("Создать кадры", "Create frames"),
+    "btn_continue_anyway": ("Всё равно продолжить", "Continue anyway"),
 
     # --- состояния очереди ---
     "status_pending": ("Ожидание", "Waiting"),
@@ -179,15 +201,17 @@ STRINGS = {
     "status_error": ("Ошибка", "Error"),
     "status_stopped": ("Остановлено", "Stopped"),
     "idle": ("Готово к запуску", "Ready to start"),
-    "scanning": ("Сканирование папки...", "Scanning folder..."),
-    "preparing": ("Подготовка к обработке...", "Preparing..."),
-    "stopping": ("Остановка после завершения текущего файла...",
-                 "Stopping after the current file finishes..."),
+    "scanning": ("Сканирование папки…", "Scanning folder…"),
+    "preparing": ("Подготовка к обработке…", "Preparing…"),
+    "stopping": ("Остановка после завершения текущего файла…",
+                 "Stopping after the current file finishes…"),
 
     # --- ход обработки ---
     "progress_done_of": ("Обработано {done} из {total}", "Processed {done} of {total}"),
     "progress_current": ("Сейчас: {name}", "Now: {name}"),
-    "progress_parallel": ("Параллельно: {count} файла(ов)", "In parallel: {count} file(s)"),
+    "progress_parallel": ("Параллельно: {count} {files}", "In parallel: {count} {files}"),
+    # Формы слова для plural(): одна, две-четыре, пять и больше.
+    "word_files": ("файл|файла|файлов", "file|files"),
     "progress_left": ("осталось ~{time}", "~{time} left"),
     "summary_done": ("Обработка завершена", "Processing finished"),
     "summary_stopped": ("Остановлено пользователем", "Stopped by the user"),
@@ -215,17 +239,21 @@ STRINGS = {
                            "Unsupported format (skipped):"),
     "dlg_skipped_dupes": ("Уже есть в очереди (пропущены):",
                           "Already in the queue (skipped):"),
-    "dlg_and_more": ("... и ещё {count}", "... and {count} more"),
+    "dlg_and_more": ("…и ещё {count}", "…and {count} more"),
     "dlg_empty_queue_title": ("Очередь пуста", "The queue is empty"),
-    "dlg_empty_queue_text": ("Добавьте файлы для конвертации.", "Add files to convert."),
+    "dlg_empty_queue_text": ("Добавьте файлы для обработки.", "Add files to process."),
     "dlg_no_selection_title": ("Нет выбора", "Nothing selected"),
     "dlg_no_selection_text": ("Выберите хотя бы один файл в очереди.",
                               "Select at least one file in the queue."),
     "dlg_empty_list_title": ("Список пуст", "The list is empty"),
     "dlg_empty_list_text": ("Добавьте файлы в очередь.", "Add files to the queue."),
     "dlg_bad_dir_title": ("Некорректная папка", "Invalid folder"),
-    "dlg_bad_dir_text": ("Выберите корректную папку сохранения.",
-                         "Choose a valid output folder."),
+    "dlg_bad_dir_text": ("Папки сохранения больше нет:\n{path}\n\n"
+                         "Возможно, её переименовали, удалили или отключили диск. "
+                         "Выберите другую кнопкой «Обзор…».",
+                         "The output folder no longer exists:\n{path}\n\n"
+                         "It may have been renamed, deleted or its drive disconnected. "
+                         "Pick another one with the “Browse…” button."),
     "dlg_no_access_title": ("Нет доступа к папке", "No access to the folder"),
     "dlg_no_access_text": ("В выбранную папку нельзя записывать файлы:\n{path}\n\n"
                            "Выберите другую папку сохранения.",
@@ -257,7 +285,8 @@ STRINGS = {
                        "defaults?\n\nThe file queue will not be touched."),
     "reset_done": ("Настройки сброшены", "Settings have been reset"),
     "dlg_no_data_title": ("Нет данных", "No data"),
-    "dlg_no_data_text": ("Сначала выполните конвертацию.", "Run a conversion first."),
+    "dlg_no_data_text": ("Отчёт появится после обработки.",
+                         "The report appears after processing."),
     "dlg_save_report": ("Сохранить отчёт", "Save the report"),
     "dlg_save_failed": ("Не удалось сохранить", "Could not save"),
     "dlg_saved": ("Сохранено", "Saved"),
@@ -311,13 +340,21 @@ STRINGS = {
     "csv_message": ("Сообщение", "Message"),
 
     # --- примечания на вкладках площадок ---
+    # Выноска, пока пресет площадки не выбран: раньше она описывала пресет,
+    # который не применялся, и вводила в заблуждение.
+    "preset_none_hint": ("Пресет {platform} не выбран — файл сохранится в обычном "
+                         "формате. Нажмите кнопку ниже, чтобы выбрать пресет.",
+                         "No {platform} preset is selected — the file is saved in a "
+                         "regular format. Click a button below to pick one."),
     "platform_note": ("Применяется к выделенным файлам, а без выделения — ко всем.",
                       "Applied to the selected files, or to all of them if nothing "
                       "is selected."),
-    "preset_applied_selected": ("Пресет применён к выбранным ({count} шт.)",
-                                "Preset applied to the selected files ({count})"),
-    "preset_applied_all": ("Пресет применён ко всем файлам ({count} шт.)",
-                           "Preset applied to every file ({count})"),
+    # «Выделенные» — подсвеченные строки, «отмеченные» — с галочкой;
+    # слово «выбранные» не используется, чтобы их не путать.
+    "preset_applied_selected": ("Пресет применён к выделенным файлам: {count}",
+                                "Preset applied to the selected files: {count}"),
+    "preset_applied_all": ("Пресет применён ко всем файлам: {count}",
+                           "Preset applied to every file: {count}"),
     "preset_applied_none": ("Пресет выбран. Добавьте файлы — он применится к ним.",
                             "Preset selected. Add files and it will be applied."),
     "tg_fragment": ("Фрагмент: с", "Fragment: from"),
@@ -333,20 +370,20 @@ STRINGS = {
                         "spec. A short file is not stretched — its own length is used."),
     "tg_source_short": ("Файл длится {duration} — короче лимита, берётся целиком.",
                         "The file lasts {duration} — under the limit, taken whole."),
-    "tg_source_long": ("Файл длится {duration} — будет обрезан до {length:.1f} сек "
-                       "с {start:.1f} сек.",
-                       "The file lasts {duration} — it will be cut to {length:.1f} s "
-                       "starting at {start:.1f} s."),
+    "tg_source_long": ("Файл длится {duration} — будет обрезан до {length} сек "
+                       "с {start} сек.",
+                       "The file lasts {duration} — it will be cut to {length} s "
+                       "starting at {start} s."),
     "col_sticker": ("СТИКЕР · {size} PX", "STICKER · {size} PX"),
     "col_emoji": ("ЭМОДЗИ · {size} PX", "EMOJI · {size} PX"),
-    "preset_sticker_png": ("Стикер PNG", "Sticker PNG"),
-    "preset_sticker_webp": ("Стикер WEBP", "Sticker WEBP"),
-    "preset_sticker_webm": ("Стикер WEBM", "Sticker WEBM"),
-    "preset_sticker_apng": ("Стикер APNG", "Sticker APNG"),
-    "preset_emoji_png": ("Эмодзи PNG", "Emoji PNG"),
-    "preset_emoji_webp": ("Эмодзи WEBP", "Emoji WEBP"),
-    "preset_emoji_webm": ("Эмодзи WEBM", "Emoji WEBM"),
-    "preset_emoji_gif": ("Эмодзи GIF", "Emoji GIF"),
+    "preset_sticker_png": ("Стикер PNG", "PNG sticker"),
+    "preset_sticker_webp": ("Стикер WEBP", "WEBP sticker"),
+    "preset_sticker_webm": ("Стикер WEBM", "WEBM sticker"),
+    "preset_sticker_apng": ("Стикер APNG", "APNG sticker"),
+    "preset_emoji_png": ("Эмодзи PNG", "PNG emoji"),
+    "preset_emoji_webp": ("Эмодзи WEBP", "WEBP emoji"),
+    "preset_emoji_webm": ("Эмодзи WEBM", "WEBM emoji"),
+    "preset_emoji_gif": ("Эмодзи GIF", "GIF emoji"),
     "preset_twitch_png": ("PNG 112×112", "PNG 112×112"),
     "preset_twitch_png_pack": ("PNG комплект (3 файла)", "PNG set (3 files)"),
     "preset_twitch_gif": ("GIF 112×112", "GIF 112×112"),
@@ -359,7 +396,7 @@ STRINGS = {
         "Telegram static sticker: one side 512 px, {fmt} format, "
         "a transparent background is recommended."),
     "hint_tg_emoji_static": (
-        "Статичный emoji Telegram: 100×100 px, формат {fmt}.",
+        "Статичный эмодзи Telegram: 100×100 px, формат {fmt}.",
         "Telegram static emoji: 100×100 px, {fmt} format."),
     "hint_tg_sticker_webm": (
         "Видео-стикер Telegram: WEBM/VP9 без звука, одна сторона 512 px, "
@@ -367,7 +404,7 @@ STRINGS = {
         "Telegram video sticker: WEBM/VP9 without audio, one side 512 px, "
         "up to 30 FPS, up to 3 s, ≤ 256 KB."),
     "hint_tg_emoji_webm": (
-        "Видео-emoji Telegram: WEBM/VP9 без звука, 100×100 px, "
+        "Видеоэмодзи Telegram: WEBM/VP9 без звука, 100×100 px, "
         "до 30 FPS, до 3 сек, ≤ 256 КБ.",
         "Telegram video emoji: WEBM/VP9 without audio, 100×100 px, "
         "up to 30 FPS, up to 3 s, ≤ 256 KB."),
@@ -407,25 +444,27 @@ STRINGS = {
     "col_twitch_emotes": ("СМАЙЛИКИ TWITCH", "TWITCH EMOTES"),
     "col_twitch_more": ("ЗНАЧКИ И РАСШИРЕНИЯ", "BADGES AND EXTENSIONS"),
     "preset_twitch_badge": ("Значок подписки (3 файла)", "Sub badge (3 files)"),
-    "preset_twitch_points": ("Иконка баллов (3 файла)", "Points icon (3 files)"),
+    "preset_twitch_points": ("Значок баллов (3 файла)", "Points icon (3 files)"),
     "preset_7tv": ("Смайлик 7TV", "7TV emote"),
     "preset_bttv": ("Смайлик BTTV", "BTTV emote"),
-    "lbl_twitch_badge_pack": ("Twitch значок (18/36/72)", "Twitch badge (18/36/72)"),
-    "lbl_twitch_points_pack": ("Twitch баллы (28/56/112)", "Twitch points (28/56/112)"),
-    "lbl_7tv": ("7TV смайлик (128×128)", "7TV emote (128×128)"),
-    "lbl_bttv": ("BTTV смайлик (112×112)", "BTTV emote (112×112)"),
+    # Подписи форматов площадок — одна схема «Площадка: что и в чём»:
+    # раньше рядом стояли «TG Стикер», «DC Эмодзи», «WA Стикер» и «Twitch PNG».
+    "lbl_twitch_badge_pack": ("Twitch: значок 18/36/72", "Twitch: badge 18/36/72"),
+    "lbl_twitch_points_pack": ("Twitch: баллы 28/56/112", "Twitch: points 28/56/112"),
+    "lbl_7tv": ("7TV: смайлик 128×128", "7TV: emote 128×128"),
+    "lbl_bttv": ("BTTV: смайлик 112×112", "BTTV: emote 112×112"),
 
     # --- WhatsApp ---
     "tab_whatsapp_tip": ("Готовые пресеты стикеров WhatsApp",
                          "Ready-made WhatsApp sticker presets"),
     "col_wa_sticker": ("СТИКЕР · 512 PX", "STICKER · 512 PX"),
     "col_wa_pack": ("НАБОР", "PACK"),
-    "preset_wa_static": ("Стикер WEBP", "Sticker WEBP"),
+    "preset_wa_static": ("Стикер WEBP", "WEBP sticker"),
     "preset_wa_animated": ("Анимированный WEBP", "Animated WEBP"),
     "preset_wa_tray": ("Иконка набора 96 px", "Pack icon 96 px"),
-    "lbl_wa_static": ("WA Стикер (WEBP)", "WA Sticker (WEBP)"),
-    "lbl_wa_animated": ("WA Стикер анимированный", "WA Animated sticker"),
-    "lbl_wa_tray": ("WA Иконка набора (96)", "WA Pack icon (96)"),
+    "lbl_wa_static": ("WhatsApp: стикер WEBP", "WhatsApp: WEBP sticker"),
+    "lbl_wa_animated": ("WhatsApp: анимированный стикер", "WhatsApp: animated sticker"),
+    "lbl_wa_tray": ("WhatsApp: иконка набора 96", "WhatsApp: pack icon 96"),
     "hint_wa_static": (
         "Стикер WhatsApp: WEBP ровно {size}×{size} px, прозрачный фон, "
         "не больше {limit} КБ.",
@@ -474,7 +513,6 @@ STRINGS = {
                       "Select a file in the queue to see a preview here"),
     "preview_video_note": ("кадр из видео", "a frame from the video"),
     "preview_user": ("зритель", "viewer"),
-    "preview_you": ("вы", "you"),
     "preview_msg_twitch": ("отличная игра", "great play"),
     "preview_msg_discord": ("смотрите, что получилось", "look what I made"),
     "preview_msg_telegram": ("новый стикер", "new sticker"),
@@ -484,12 +522,14 @@ STRINGS = {
     "preview_pack": ("Мой набор стикеров", "My sticker pack"),
 
     # --- проверка обновлений ---
-    "update_available": ("Доступна версия {version} — скачать",
-                         "Version {version} is available — download"),
-    "update_tip": ("Открыть страницу выпуска на GitHub. Проверку можно "
-                   "отключить в контекстном меню номера версии.",
-                   "Open the release page on GitHub. The check can be turned "
-                   "off from the version number's context menu."),
+    # Ссылка встаёт на место номера версии, поэтому короткая.
+    "update_available": ("Обновить до {version}", "Update to {version}"),
+    "update_tip": ("Установлена версия {current}, вышла {version}. Щелчок открывает "
+                   "страницу выпуска на GitHub. Проверку можно отключить в меню "
+                   "по правому щелчку.",
+                   "Version {current} is installed, {version} is out. Click to open "
+                   "the release page on GitHub. The check can be turned off from "
+                   "the right-click menu."),
     "update_check_toggle": ("Проверять обновления при запуске",
                             "Check for updates at startup"),
     "menu_open_log": ("Открыть папку журнала", "Open the log folder"),
@@ -516,22 +556,22 @@ STRINGS = {
         "the FPS is chosen automatically. GIF transparency is one-bit, so soft "
         "edges get rough."),
     # --- подписи форматов площадок ---
-    "lbl_tg_sticker_png": ("TG Стикер (PNG)", "TG Sticker (PNG)"),
-    "lbl_tg_sticker_webp": ("TG Стикер (WEBP)", "TG Sticker (WEBP)"),
-    "lbl_tg_sticker_webm": ("TG Стикер (WEBM)", "TG Sticker (WEBM)"),
-    "lbl_tg_emoji_png": ("TG Эмодзи (PNG)", "TG Emoji (PNG)"),
-    "lbl_tg_emoji_webp": ("TG Эмодзи (WEBP)", "TG Emoji (WEBP)"),
-    "lbl_tg_emoji_webm": ("TG Эмодзи (WEBM)", "TG Emoji (WEBM)"),
-    "lbl_twitch_static_112": ("Twitch PNG (112×112)", "Twitch PNG (112×112)"),
-    "lbl_twitch_static_pack": ("Twitch PNG комплект (28/56/112)",
-                               "Twitch PNG set (28/56/112)"),
-    "lbl_twitch_animated_112": ("Twitch GIF (112×112)", "Twitch GIF (112×112)"),
-    "lbl_twitch_animated_pack": ("Twitch GIF комплект (28/56/112)",
-                                 "Twitch GIF set (28/56/112)"),
-    "lbl_dc_sticker_png": ("DC Стикер (PNG)", "DC Sticker (PNG)"),
-    "lbl_dc_sticker_apng": ("DC Стикер (APNG)", "DC Sticker (APNG)"),
-    "lbl_dc_emoji_png": ("DC Эмодзи (PNG)", "DC Emoji (PNG)"),
-    "lbl_dc_emoji_gif": ("DC Эмодзи (GIF)", "DC Emoji (GIF)"),
+    "lbl_tg_sticker_png": ("Telegram: стикер PNG", "Telegram: PNG sticker"),
+    "lbl_tg_sticker_webp": ("Telegram: стикер WEBP", "Telegram: WEBP sticker"),
+    "lbl_tg_sticker_webm": ("Telegram: стикер WEBM", "Telegram: WEBM sticker"),
+    "lbl_tg_emoji_png": ("Telegram: эмодзи PNG", "Telegram: PNG emoji"),
+    "lbl_tg_emoji_webp": ("Telegram: эмодзи WEBP", "Telegram: WEBP emoji"),
+    "lbl_tg_emoji_webm": ("Telegram: эмодзи WEBM", "Telegram: WEBM emoji"),
+    "lbl_twitch_static_112": ("Twitch: PNG 112×112", "Twitch: PNG 112×112"),
+    "lbl_twitch_static_pack": ("Twitch: PNG-комплект 28/56/112",
+                               "Twitch: PNG set 28/56/112"),
+    "lbl_twitch_animated_112": ("Twitch: GIF 112×112", "Twitch: GIF 112×112"),
+    "lbl_twitch_animated_pack": ("Twitch: GIF-комплект 28/56/112",
+                                 "Twitch: GIF set 28/56/112"),
+    "lbl_dc_sticker_png": ("Discord: стикер PNG", "Discord: PNG sticker"),
+    "lbl_dc_sticker_apng": ("Discord: стикер APNG", "Discord: APNG sticker"),
+    "lbl_dc_emoji_png": ("Discord: эмодзи PNG", "Discord: PNG emoji"),
+    "lbl_dc_emoji_gif": ("Discord: эмодзи GIF", "Discord: GIF emoji"),
 
     "kb": ("{value} КБ", "{value} KB"),
     "mb": ("{value} МБ", "{value} MB"),
@@ -573,17 +613,20 @@ STRINGS = {
                            "FFmpeg did not respond for over {minutes} min and was "
                            "stopped. The file may be damaged or use an unsupported "
                            "codec."),
-    "err_ffmpeg_failed": ("FFmpeg завершился с ошибкой (код {code}). Подробности "
-                          "ниже:",
-                          "FFmpeg failed (code {code}). Details below:"),
+    # Без «Подробности ниже»: первая строка ошибки стоит в строке очереди,
+    # и там «ниже» ничего нет. Вывод FFmpeg дописывается в окне подробностей.
+    "err_ffmpeg_failed": ("FFmpeg завершился с ошибкой (код {code}).",
+                          "FFmpeg failed (code {code})."),
     "err_target_too_small": ("Целевой размер {kb} КБ слишком мал для этого файла. "
                              "Увеличьте размер, обрежьте по времени или уменьшите "
                              "разрешение.",
                              "The target size of {kb} KB is too small for this file. "
                              "Raise the size, trim the duration or lower the "
                              "resolution."),
-    "err_too_many_frames": ("В анимации больше {frames} кадров.",
-                            "The animation has more than {frames} frames."),
+    "err_too_many_frames": ("В анимации больше {frames} кадров. Сократите фрагмент "
+                            "или уменьшите частоту кадров.",
+                            "The animation has more than {frames} frames. Trim the "
+                            "clip or lower the frame rate."),
     "err_over_limit": ("Результат не удалось уложить в лимит {limit} КБ "
                        "(получено {got} КБ). Сократите длительность или упростите "
                        "анимацию.",
@@ -605,12 +648,11 @@ STRINGS = {
                                    "the WEBP format — it compresses better."),
     "err_zero_size": ("Изображение имеет нулевой размер и, вероятно, повреждено.",
                       "The image has zero size and is probably damaged."),
-    "err_duration_over": ("Длительность {duration:.2f} сек превышает лимит {limit:g} сек.",
-                          "The duration of {duration:.2f} s exceeds the {limit:g} s "
+    "err_duration_over": ("Длительность {duration} сек превышает лимит {limit} сек.",
+                          "The duration of {duration} s exceeds the {limit} s "
                           "limit."),
     "err_duration_zero": ("Длительность фрагмента должна быть больше 0 секунд.",
                           "The fragment must be longer than 0 seconds."),
-    "err_internal": ("Внутренняя ошибка: {detail}", "Internal error: {detail}"),
 }
 
 
@@ -643,6 +685,37 @@ def tr(key, **fields):
         return key
     text = pair[0] if _current == RUSSIAN else pair[1]
     return text.format(**fields) if fields else text
+
+
+def number(value, decimals=2):
+    """Число для подписи: без лишних нулей и с запятой по-русски.
+
+    Поля ввода берут разделитель из локали языка интерфейса, и подписи
+    рядом должны совпадать с ними: раньше поле показывало «3,00 сек», а
+    строка под ним — «обрезан до 3.0 сек».
+    """
+    if isinstance(value, int) or float(value).is_integer():
+        return str(int(value))
+    text = f"{float(value):.{decimals}f}".rstrip("0").rstrip(".")
+    return text.replace(".", ",") if _current == RUSSIAN else text
+
+
+def plural(key, count):
+    """Слово в нужной форме для числа: «1 файл», «3 файла», «5 файлов».
+
+    Формы лежат в STRINGS через «|»: у русского три (одна, две-четыре,
+    пять и больше), у английского две. Раньше вместо этого писали
+    «файла(ов)» и «шт.».
+    """
+    forms = tr(key).split("|")
+    count = abs(int(count))
+    if _current == RUSSIAN and len(forms) == 3:
+        if count % 10 == 1 and count % 100 != 11:
+            return forms[0]
+        if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+            return forms[1]
+        return forms[2]
+    return forms[0] if count == 1 else forms[-1]
 
 
 def missing_translations():
