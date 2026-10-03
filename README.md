@@ -103,7 +103,7 @@ The bundled FFmpeg is checked against `ffmpeg_checksums.txt`.
 - **Updates:** on every start the app asks GitHub about a new version and
   shows a link in place of the version number; it never downloads anything by
   itself. Turn it off in the version number menu (right-click).
-- **Changelog** — [CHANGELOG.md](CHANGELOG.md) (in Russian).
+- **Changelog** — [CHANGELOG.md](CHANGELOG.md).
 
 ## Licenses
 
