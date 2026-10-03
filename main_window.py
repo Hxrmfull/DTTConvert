@@ -208,6 +208,11 @@ AUDIO_BITRATES = (96, 128, 160, 192, 256, 320)
 # Выше этого списку форматов разворачиваться незачем: он перестаёт
 # помещаться в окно и уезжает за край экрана.
 FORMAT_POPUP_MAX_HEIGHT = 420
+# Ширина полей времени. Было 78 и 86 — короткое «0,00 сек» помещалось,
+# а «1250,50 сек» у длинного ролика (или «3599,90» у Telegram) уже нет:
+# кнопки счётчика съедали хвост. Строки с этими полями свободны по ширине.
+TRIM_FIELD_WIDTH = 108
+TG_FRAGMENT_FIELD_WIDTH = 90
 # Строк в списке форматов без прокрутки (вместе с заголовками групп):
 # столько, чтобы список целиком (со скруглённым низом) помещался в
 # предел высоты выше — при 13 строках нижний край обрезался.
@@ -1082,7 +1087,7 @@ class MainWindow(QMainWindow):
         self.tg_start_spin = QDoubleSpinBox()
         self.tg_start_spin.setRange(0.0, 3600.0)
         self.tg_start_spin.setSingleStep(0.1)
-        self.tg_start_spin.setFixedWidth(78)
+        self.tg_start_spin.setFixedWidth(TG_FRAGMENT_FIELD_WIDTH)
         self.tg_start_spin.setToolTip(
             tr("tg_start_tip")
         )
@@ -1095,7 +1100,7 @@ class MainWindow(QMainWindow):
         self.tg_duration_spin.setRange(0.1, MAX_VIDEO_DURATION_SEC)
         self.tg_duration_spin.setSingleStep(0.1)
         self.tg_duration_spin.setValue(MAX_VIDEO_DURATION_SEC)
-        self.tg_duration_spin.setFixedWidth(78)
+        self.tg_duration_spin.setFixedWidth(TG_FRAGMENT_FIELD_WIDTH)
         self.tg_duration_spin.setToolTip(
             tr("tg_duration_tip")
         )
@@ -1462,14 +1467,14 @@ class MainWindow(QMainWindow):
         self.trim_start_spin = QDoubleSpinBox()
         self.trim_start_spin.setRange(0.0, 86400.0)
         self.trim_start_spin.setSingleStep(0.5)
-        self.trim_start_spin.setFixedWidth(86)
+        self.trim_start_spin.setFixedWidth(TRIM_FIELD_WIDTH)
         self.trim_start_spin.setSuffix(tr("seconds_suffix"))
         self.trim_start_spin.valueChanged.connect(self._on_trim_changed)
         self.trim_end_label = QLabel(tr("trim_end"))
         self.trim_end_spin = QDoubleSpinBox()
         self.trim_end_spin.setRange(0.1, 86400.0)
         self.trim_end_spin.setSingleStep(0.5)
-        self.trim_end_spin.setFixedWidth(86)
+        self.trim_end_spin.setFixedWidth(TRIM_FIELD_WIDTH)
         self.trim_end_spin.setSuffix(tr("seconds_suffix"))
         self.trim_end_spin.valueChanged.connect(self._on_trim_changed)
         self.trim_start_label.setBuddy(self.trim_start_spin)
