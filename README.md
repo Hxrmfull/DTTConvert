@@ -100,8 +100,8 @@ The bundled FFmpeg is checked against `ffmpeg_checksums.txt`.
 
 - **Log:** `%LOCALAPPDATA%\DTTConvert\logs\app.log` — double-click the
   version number to open the folder.
-- **Updates:** once a day the app asks GitHub about a new version and shows
-  a link in place of the version number; it never downloads anything by
+- **Updates:** on every start the app asks GitHub about a new version and
+  shows a link in place of the version number; it never downloads anything by
   itself. Turn it off in the version number menu (right-click).
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md) (in Russian).
 

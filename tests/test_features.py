@@ -497,10 +497,16 @@ def t_update_check():
     assert updater.is_newer("v1.2.0", "1.1.0") and not updater.is_newer("1.1.0", "1.1.0")
     assert updater.is_newer("2.0", "1.9.9") and not updater.is_newer("garbage", "1.0")
     original = updater.fetch_latest_release
-    updater.fetch_latest_release = lambda timeout=0: ("9.9.9", "https://github.com/x/y/releases/9.9.9")
+    asked = []
+
+    def fake_fetch(timeout=0):
+        asked.append(1)
+        return "9.9.9", "https://github.com/x/y/releases/9.9.9"
+
+    updater.fetch_latest_release = fake_fetch
     try:
         store = QSettings(ORGANIZATION, ORGANIZATION)
-        store.setValue("check_updates", True); store.setValue("last_update_check", 0.0)
+        store.setValue("check_updates", True); store.setValue("last_update_check", 9e12)
         win = MainWindow()
         win._start_update_check()
         deadline = _time.monotonic() + 5
@@ -508,10 +514,21 @@ def t_update_check():
             settle(50)
         assert win.update_button.isVisibleTo(win), "ссылка на новую версию не появилась"
         assert "9.9.9" in win.update_button.text()
+        # Проверка при каждом запуске: и сразу после прошлой, и при старой
+        # отметке времени из прежних версий (выше она стоит «в будущем»).
+        assert len(asked) == 1, asked
+        assert not store.contains("last_update_check"), "отметка прежнего интервала осталась"
+        win3 = MainWindow(); win3._start_update_check()
+        deadline = _time.monotonic() + 5
+        while len(asked) < 2 and _time.monotonic() < deadline:
+            settle(50)
+        assert len(asked) == 2, "повторный запуск не спросил GitHub"
+        win3.close()
         # Отключённая проверка не ходит в сеть.
-        store.setValue("check_updates", False); store.setValue("last_update_check", 0.0)
+        store.setValue("check_updates", False)
         win2 = MainWindow(); win2._start_update_check(); settle(200)
         assert not win2.update_button.isVisibleTo(win2)
+        assert len(asked) == 2, "отключённая проверка всё равно спросила GitHub"
         win.close(); win2.close()
     finally:
         updater.fetch_latest_release = original

@@ -59,7 +59,7 @@ from animation_info import animated_image_info
 from lottie_utils import (is_tgs, preview_animation_path, representative_frame,
                           write_preview_animation)
 from app_info import APP_NAME, ORGANIZATION, RELEASES_URL, version_string, window_title
-from updater import CHECK_INTERVAL_SEC, UpdateCheckWorker, is_newer
+from updater import UpdateCheckWorker, is_newer
 from i18n import (ENGLISH, LANGUAGE_NAMES, LANGUAGE_ORDER, current_language,
                   language_from_locale, number, plural, set_language, tr)
 from discord_utils import (
@@ -3421,17 +3421,22 @@ class MainWindow(QMainWindow):
         menu.exec((anchor or self.version_label).mapToGlobal(position))
 
     def _start_update_check(self):
-        """Раз в сутки спрашивает GitHub о новой версии — в фоне и молча."""
+        """При каждом запуске спрашивает GitHub о новой версии — в фоне и молча.
+
+        Раньше проверка шла не чаще раза в сутки, и вышедший выпуск мог
+        оставаться незамеченным почти сутки. Запрос один на запуск — до
+        лимита GitHub (60 в час без входа) так не дойти.
+        """
         if not self.settings_store.value("check_updates", True, type=bool):
             return
-        last = self.settings_store.value("last_update_check", 0.0, type=float)
-        if time.time() - last < CHECK_INTERVAL_SEC:
-            known = self.settings_store.value("known_update", "", type=str)
-            url = self.settings_store.value("known_update_url", "", type=str)
-            if known and url and is_newer(known):
-                self._on_update_found(known, url)
-            return
-        self.settings_store.setValue("last_update_check", time.time())
+        # Пока GitHub отвечает, показываем найденное в прошлый раз: без сети
+        # ссылка на новую версию не пропадает.
+        known = self.settings_store.value("known_update", "", type=str)
+        url = self.settings_store.value("known_update_url", "", type=str)
+        if known and url and is_newer(known):
+            self._on_update_found(known, url)
+        # Время прошлой проверки больше не нужно.
+        self.settings_store.remove("last_update_check")
         self._update_worker = UpdateCheckWorker(self)
         self._update_worker.update_found.connect(self._on_update_found)
         # Ссылку снимаем до удаления объекта: иначе закрытие окна обратилось
