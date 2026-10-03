@@ -126,6 +126,15 @@ def animated_image_info(path, ffprobe_path=None):
 
     Возвращает None, если файл не анимированный.
     """
+    if os.path.splitext(path)[1].lower() == ".tgs":
+        # Стикер Telegram: Pillow его не открывает, сведения даёт rlottie.
+        from lottie_utils import tgs_info
+
+        try:
+            return tgs_info(path)
+        except Exception:
+            _log.debug("Не удалось прочитать стикер %s", path, exc_info=True)
+            return None
     try:
         with Image.open(path) as image:
             frames = getattr(image, "n_frames", 1)

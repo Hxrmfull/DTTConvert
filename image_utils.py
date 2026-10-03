@@ -3,6 +3,7 @@ import os
 from PIL import Image, ImageOps
 
 from animation_info import animated_image_info
+from lottie_utils import is_tgs, open_tgs
 from errors import LocalizedRuntimeError, LocalizedValueError
 
 from telegram_utils import (
@@ -291,6 +292,13 @@ class ImageProcessor:
         Нужен, когда из анимированной картинки делают статичный результат:
         раскладывать всю анимацию ради одного кадра незачем.
         """
+        if is_tgs(input_path):
+            with open_tgs(input_path) as animation:
+                animation.render(animation.frame_at(seconds)).save(
+                    output_path, format="PNG", compress_level=TEMP_PNG_COMPRESSION
+                )
+            return
+
         frame_index = 0
         if seconds and seconds > 0:
             info = animated_image_info(input_path, ffprobe_path) or {}
@@ -319,8 +327,10 @@ class ImageProcessor:
         Кадры пишутся на диск по одному: держать распакованную анимацию
         целиком в памяти слишком дорого.
         """
-        info = animated_image_info(input_path, ffprobe_path) or {}
         os.makedirs(frames_dir, exist_ok=True)
+        if is_tgs(input_path):
+            return _dump_tgs_frames(input_path, frames_dir)
+        info = animated_image_info(input_path, ffprobe_path) or {}
 
         with Image.open(input_path) as source_image:
             frame_count = getattr(source_image, "n_frames", 1)
@@ -342,14 +352,38 @@ class ImageProcessor:
                 )
                 names.append(name)
 
-        list_path = os.path.join(frames_dir, FRAME_LIST_NAME)
-        with open(list_path, "w", encoding="utf-8") as handle:
-            handle.write("ffconcat version 1.0\n")
-            for index, name in enumerate(names):
-                seconds = max(0.001, float(durations[index]) / 1000.0)
-                handle.write(f"file '{name}'\nduration {seconds:.4f}\n")
-            if names:
-                # Последний кадр повторяется без duration — иначе concat
-                # отбрасывает его задержку и анимация теряет один кадр.
-                handle.write(f"file '{names[-1]}'\n")
-        return list_path
+        return _write_frame_list(frames_dir, names, durations)
+
+
+def _write_frame_list(frames_dir, names, durations):
+    """Список кадров для concat-демультиплексора FFmpeg."""
+    list_path = os.path.join(frames_dir, FRAME_LIST_NAME)
+    with open(list_path, "w", encoding="utf-8") as handle:
+        handle.write("ffconcat version 1.0\n")
+        for index, name in enumerate(names):
+            seconds = max(0.001, float(durations[index]) / 1000.0)
+            handle.write(f"file '{name}'\nduration {seconds:.4f}\n")
+        if names:
+            # Последний кадр повторяется без duration — иначе concat
+            # отбрасывает его задержку и анимация теряет один кадр.
+            handle.write(f"file '{names[-1]}'\n")
+    return list_path
+
+
+def _dump_tgs_frames(input_path, frames_dir):
+    """Кадры стикера .tgs: rlottie рисует их по одному в родном размере.
+
+    Задержки у Lottie одинаковые — 1/fps. Дальше кадры идут тем же путём,
+    что у анимированного WEBP.
+    """
+    names = []
+    with open_tgs(input_path) as animation:
+        for index in range(animation.frames):
+            name = f"frame_{index:05d}.png"
+            animation.render(index).save(
+                os.path.join(frames_dir, name), format="PNG",
+                compress_level=TEMP_PNG_COMPRESSION,
+            )
+            names.append(name)
+        per_frame = 1000.0 / animation.fps
+    return _write_frame_list(frames_dir, names, [per_frame] * len(names))

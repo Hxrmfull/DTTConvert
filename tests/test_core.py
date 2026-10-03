@@ -9,6 +9,8 @@ import tempfile
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
+# Помощники тестов (tgs_fixture) лежат рядом с наборами.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 WORK_ROOT = os.path.join(tempfile.gettempdir(), "mcs_tests")
 os.makedirs(WORK_ROOT, exist_ok=True)
 
@@ -1004,6 +1006,84 @@ def t_fill_square():
     with Image.open(png) as im:
         assert im.convert("RGBA").getpixel((1,1))[3]==255, "в режиме заполнения поля остались прозрачными"
 check("N7 режим «заполнить квадрат» обрезает края вместо полей", t_fill_square)
+
+# ---------- Стикеры Telegram (.tgs) ----------
+from tgs_fixture import make_tgs
+
+TGS = make_tgs(os.path.join(WORK, "стикер.tgs"), frames=90, fps=30)
+
+def t_tgs_category_and_info():
+    from worker import get_category
+    from animation_info import animated_image_info
+    assert get_category(TGS) == "animated_image", get_category(TGS)
+    info = animated_image_info(TGS)
+    # Ровно 90 кадров и 3 секунды: rlottie считает кадры включительно с
+    # последним, и без поправки выходил бы 91 кадр и 3,03 с.
+    assert info["frames"] == 90 and abs(info["duration"] - 3.0) < 1e-6, info
+    assert (info["width"], info["height"]) == (512, 512), info
+check("TGS1 .tgs распознаётся: 90 кадров, 3 с, 512×512", t_tgs_category_and_info)
+
+def t_tgs_conversions():
+    d = os.path.join(WORK, "tgs_out")
+    for fmt in ("gif", "webp", "apng", "mp4", "png"):
+        run_job(TGS, fmt, d)
+    made = sorted(os.listdir(d))
+    expected = ["стикер.gif", "стикер.mp4", "стикер.png", "стикер.webp", "стикер_1.png"]
+    assert made == expected, made
+    # GIF и видео — анимация, а не один кадр, и примерно той же длины.
+    assert fp.get_frame_count(os.path.join(d, "стикер.gif")) > 30
+    assert fp.get_frame_count(os.path.join(d, "стикер.mp4")) > 30
+    # «WEBP» в списке форматов — статичная картинка (анимированный WEBP
+    # делает пресет 7TV): из стикера берётся кадр.
+    with Image.open(os.path.join(d, "стикер.webp")) as im:
+        assert getattr(im, "n_frames", 1) == 1
+        assert im.convert("RGBA").getbbox() is not None, "пустой кадр"
+    # PNG без анимации — кадр, и на нём оранжевый круг на прозрачном фоне.
+    static = [f for f in made if f.endswith(".png")]
+    has_static = False
+    for name in static:
+        with Image.open(os.path.join(d, name)) as im:
+            if getattr(im, "n_frames", 1) == 1:
+                has_static = True
+                rgba = im.convert("RGBA")
+                assert rgba.getpixel((2, 2))[3] == 0, "фон стикера не прозрачный"
+                assert rgba.getbbox() is not None
+    assert has_static, "нет статичного кадра"
+check("TGS2 .tgs -> GIF, WEBP, APNG, MP4, PNG", t_tgs_conversions)
+
+def t_tgs_presets():
+    d = os.path.join(WORK, "tgs_presets")
+    run_job(TGS, "tg_sticker_webm", d)
+    out = os.path.join(d, "стикер_tg_sticker.webm")
+    assert os.path.getsize(out) <= 256 * 1024
+    assert fp.get_frame_count(out) > 30, "видео-стикер без анимации"
+    made = run_job(TGS, "discord_emoji_gif", d)
+    assert any(name.endswith("_dc_emoji.gif") for name in made), made
+    made = run_job(TGS, "twitch_animated_112", d)
+    assert any(name.endswith("_twitch_112.gif") for name in made), made
+    made = run_job(TGS, "seventv_emote", d)
+    webp = [name for name in made if name.endswith(".webp")]
+    assert webp, made
+    with Image.open(os.path.join(d, webp[0])) as im:
+        assert getattr(im, "n_frames", 1) > 1, "7TV из стикера должен быть анимированным"
+check("TGS3 .tgs -> пресеты Telegram, Discord, Twitch, 7TV", t_tgs_presets)
+
+def t_tgs_damaged():
+    bad = os.path.join(WORK, "битый.tgs")
+    with open(bad, "wb") as handle:
+        handle.write(b"not a sticker at all")
+    d = os.path.join(WORK, "tgs_bad")
+    os.makedirs(d, exist_ok=True)
+    job = ConversionJob(input_path=bad, output_dir=d, source_path=bad,
+                        settings=JobSettings(output_format="gif"))
+    fin = []
+    w = ConversionWorker([job], max_workers=1)
+    w.file_finished.connect(lambda i, ok, m: fin.append((ok, m)))
+    w.run()
+    assert fin and not fin[0][0], fin
+    from errors import message_text
+    assert "битый.tgs" in message_text(fin[0][1]), message_text(fin[0][1])
+check("TGS4 битый .tgs — понятная ошибка, а не падение", t_tgs_damaged)
 
 print()
 failed=[r for r in results if r[1]!="OK"]
