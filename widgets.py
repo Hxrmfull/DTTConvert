@@ -17,24 +17,30 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QColor, QPainter, QPalette, QPen
 from PyQt6.QtWidgets import QAbstractButton, QCheckBox, QStyledItemDelegate
 
+from styles import palette
+
 TRACK_WIDTH = 38
 TRACK_HEIGHT = 20
 KNOB_MARGIN = 3
 TEXT_GAP = 10
 
-COLORS = {
-    "track_off": "#383a48",
-    "track_off_border": "#4a4c60",
-    "track_on": "#6c63ff",
-    "track_on_border": "#8a83ff",
-    "knob_off": "#b9bbc9",
-    "knob_on": "#ffffff",
-    "track_off_disabled": "#26272f",
-    "track_on_disabled": "#3a3760",
-    "knob_disabled": "#5f6070",
-    "text": "#d7d8e0",
-    "text_disabled": "#5f6070",
-}
+
+
+def toggle_colors(colors):
+    """Цвета тумблера из палитры темы (см. styles.palette)."""
+    return {
+        "track_off": colors["toggle_track_off"],
+        "track_off_border": colors["check_border"],
+        "track_on": colors["accent"],
+        "track_on_border": colors["accent_bright"],
+        "knob_off": colors["toggle_knob_off"],
+        "knob_on": colors["bright_text"],
+        "track_off_disabled": colors["toggle_track_off_disabled"],
+        "track_on_disabled": colors["toggle_track_on_disabled"],
+        "knob_disabled": colors["faint_text"],
+        "text": colors["check_text"],
+        "text_disabled": colors["faint_text"],
+    }
 
 
 class ToggleSwitch(QCheckBox):
@@ -43,11 +49,19 @@ class ToggleSwitch(QCheckBox):
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self._offset = 0.0
+        # Тумблер рисуется вручную, и таблица стилей до него не доходит:
+        # цвета темы он получает через set_palette.
+        self._colors = toggle_colors(palette())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._animation = QPropertyAnimation(self, b"offset", self)
         self._animation.setDuration(140)
         self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.toggled.connect(self._animate_to_state)
+
+    def set_palette(self, colors):
+        """Перекрашивает тумблер под тему (полная палитра styles.palette)."""
+        self._colors = toggle_colors(colors)
+        self.update()
 
     def _animate_to_state(self, checked):
         self._animation.stop()
@@ -88,22 +102,23 @@ class ToggleSwitch(QCheckBox):
 
         enabled = self.isEnabled()
         checked = self.isChecked()
+        colors = self._colors
 
         top = (self.height() - TRACK_HEIGHT) / 2
         track = QRectF(0, top, TRACK_WIDTH, TRACK_HEIGHT)
 
         if not enabled:
-            track_color = COLORS["track_on_disabled"] if checked else COLORS["track_off_disabled"]
+            track_color = colors["track_on_disabled"] if checked else colors["track_off_disabled"]
             border_color = track_color
-            knob_color = COLORS["knob_disabled"]
+            knob_color = colors["knob_disabled"]
         elif checked:
-            track_color = COLORS["track_on"]
-            border_color = COLORS["track_on_border"]
-            knob_color = COLORS["knob_on"]
+            track_color = colors["track_on"]
+            border_color = colors["track_on_border"]
+            knob_color = colors["knob_on"]
         else:
-            track_color = COLORS["track_off"]
-            border_color = COLORS["track_off_border"]
-            knob_color = COLORS["knob_off"]
+            track_color = colors["track_off"]
+            border_color = colors["track_off_border"]
+            knob_color = colors["knob_off"]
 
         painter.setPen(QPen(QColor(border_color), 1))
         painter.setBrush(QColor(track_color))
@@ -118,7 +133,7 @@ class ToggleSwitch(QCheckBox):
         painter.drawEllipse(QRectF(knob_x, top + KNOB_MARGIN, diameter, diameter))
 
         if self.text():
-            painter.setPen(QColor(COLORS["text"] if enabled else COLORS["text_disabled"]))
+            painter.setPen(QColor(colors["text"] if enabled else colors["text_disabled"]))
             text_rect = self.rect().adjusted(int(TRACK_WIDTH + TEXT_GAP), 0, 0, 0)
             painter.drawText(
                 text_rect,
@@ -154,11 +169,10 @@ class GroupHeaderDelegate(QStyledItemDelegate):
     прямо в палитру отрисовки — это единственный способ, который работает.
     """
 
-    SEPARATOR_COLOR = "#3c3f5c"
-
-    def __init__(self, header_color, parent=None):
+    def __init__(self, header_color, parent=None, separator_color=None):
         super().__init__(parent)
         self._header_color = QColor(header_color)
+        self._separator_color = QColor(separator_color or palette()["caption_line"])
 
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
@@ -167,7 +181,7 @@ class GroupHeaderDelegate(QStyledItemDelegate):
         if index.flags() & Qt.ItemFlag.ItemIsEnabled or index.row() == 0:
             return
         painter.save()
-        painter.setPen(QColor(self.SEPARATOR_COLOR))
+        painter.setPen(self._separator_color)
         y = option.rect.top() + 1
         painter.drawLine(option.rect.left() + 6, y, option.rect.right() - 6, y)
         painter.restore()
@@ -189,13 +203,14 @@ class StatusDotDelegate(QStyledItemDelegate):
     Раньше состояние было текстом в скобках — цвет считывается быстрее.
     """
 
-    STATUS_COLORS = {
-        "Ожидание": "#6f7180",
-        "Обработка": "#6c63ff",
-        "Готово": "#4caf7d",
-        "Ошибка": "#e05561",
-        # Прерванный файл — не ошибка и не успех, поэтому отдельный цвет.
-        "Остановлено": "#c9a227",
+    # Состояние → роль цвета в палитре. Прерванный файл — не ошибка
+    # и не успех, поэтому у него отдельный цвет.
+    STATUS_ROLES = {
+        "Ожидание": "status_pending",
+        "Обработка": "accent",
+        "Готово": "status_done",
+        "Ошибка": "status_error",
+        "Остановлено": "status_stopped",
     }
     DOT_RADIUS = 5
     RIGHT_PADDING = 16
@@ -203,6 +218,8 @@ class StatusDotDelegate(QStyledItemDelegate):
     def __init__(self, status_of, parent=None):
         super().__init__(parent)
         self._status_of = status_of
+        colors = palette()
+        self._colors = {status: colors[role] for status, role in self.STATUS_ROLES.items()}
 
     def sizeHint(self, option, index):
         size = super().sizeHint(option, index)
@@ -212,7 +229,7 @@ class StatusDotDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
         status = self._status_of(index)
-        color = self.STATUS_COLORS.get(status)
+        color = self._colors.get(status)
         if color is None:
             return
         painter.save()

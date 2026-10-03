@@ -240,7 +240,17 @@ STRINGS = {
                              "Продолжить?",
                              "About {count} PNG files will be created. That may take "
                              "a lot of disk space and time.\n\nContinue?"),
-    "dlg_reset_title": ("Сбросить настройки", "Reset the settings"),
+    "dlg_twitch_long_title": ("Слишком длинная анимация", "Animation too long"),
+    "dlg_twitch_long_text": ("В анимированном смайлике Twitch не больше 60 кадров, "
+                             "поэтому из длинного ролика выйдет рваное слайд-шоу:\n\n"
+                             "{files}\n\nПлавно получается до ~{seconds} сек. Лучше "
+                             "обрезать фрагмент на вкладке «Основная».\n\n"
+                             "Всё равно продолжить?",
+                             "A Twitch animated emote holds at most 60 frames, so a "
+                             "long clip turns into a choppy slideshow:\n\n{files}\n\n"
+                             "It stays smooth up to ~{seconds} s. Better trim a "
+                             "fragment on the General tab.\n\nContinue anyway?"),
+    "dlg_reset_title":("Сбросить настройки", "Reset the settings"),
     "dlg_reset_text": ("Вернуть настройки обработки и папку сохранения "
                        "к исходному состоянию?\n\nОчередь файлов не пострадает.",
                        "Restore the processing options and output folder to their "
@@ -362,18 +372,127 @@ STRINGS = {
         "Telegram video emoji: WEBM/VP9 without audio, 100×100 px, "
         "up to 30 FPS, up to 3 s, ≤ 256 KB."),
     "hint_twitch_static": (
-        "Статичный смайлик Twitch: PNG, {sizes}, квадрат с прозрачным фоном. "
-        "Изображение вписывается целиком, пустое место остаётся прозрачным.",
+        "Статичный смайлик Twitch: PNG, {sizes}, квадрат с прозрачным фоном, "
+        "не больше 1 МБ.",
         "Twitch static emote: PNG, {sizes}, a square with a transparent "
-        "background. The image fits whole, the spare room stays transparent."),
+        "background, no larger than 1 MB."),
     "hint_twitch_animated": (
         "Анимированный смайлик Twitch: GIF, {sizes}, квадрат с прозрачным фоном. "
         "Лимиты: не более {frames} кадров и {limit} — FPS подбирается автоматически.",
         "Twitch animated emote: GIF, {sizes}, a square with a transparent "
         "background. Limits: at most {frames} frames and {limit} — the FPS is "
         "chosen automatically."),
-    "twitch_sizes_pack": ("28, 56 и 112 px (3 файла)", "28, 56 and 112 px (3 files)"),
-    "twitch_sizes_one": ("112×112 px", "112×112 px"),
+    "twitch_sizes_set": ("{sizes} px — {count} файла", "{sizes} px — {count} files"),
+    "twitch_sizes_one_n": ("{size}×{size} px", "{size}×{size} px"),
+    "hint_twitch_badge": (
+        "Значок подписки Twitch: PNG, {sizes}, прозрачный фон, каждый не больше "
+        "{limit}. Рисунок должен читаться даже в 18 px.",
+        "Twitch subscriber badge: PNG, {sizes}, transparent background, each "
+        "no larger than {limit}. The picture must read even at 18 px."),
+    "hint_twitch_points": (
+        "Иконка награды за баллы канала: PNG, {sizes}, прозрачный фон, каждая "
+        "не больше {limit}.",
+        "Channel Points reward icon: PNG, {sizes}, transparent background, "
+        "each no larger than {limit}."),
+    "hint_7tv": (
+        "Смайлик 7TV: {size}×{size} px. Из видео и анимации — анимированный "
+        "WEBP (до {frames} кадров), из картинки — PNG. Не больше {limit}.",
+        "7TV emote: {size}×{size} px. Video and animations become an animated "
+        "WEBP (up to {frames} frames), still pictures a PNG. No larger than {limit}."),
+    "hint_bttv": (
+        "Смайлик BTTV: {size}×{size} px. Из видео и анимации — GIF, из картинки "
+        "— PNG. Не больше {limit}.",
+        "BTTV emote: {size}×{size} px. Video and animations become a GIF, still "
+        "pictures a PNG. No larger than {limit}."),
+    "col_twitch_emotes": ("СМАЙЛИКИ TWITCH", "TWITCH EMOTES"),
+    "col_twitch_more": ("ЗНАЧКИ И РАСШИРЕНИЯ", "BADGES AND EXTENSIONS"),
+    "preset_twitch_badge": ("Значок подписки (3 файла)", "Sub badge (3 files)"),
+    "preset_twitch_points": ("Иконка баллов (3 файла)", "Points icon (3 files)"),
+    "preset_7tv": ("Смайлик 7TV", "7TV emote"),
+    "preset_bttv": ("Смайлик BTTV", "BTTV emote"),
+    "lbl_twitch_badge_pack": ("Twitch значок (18/36/72)", "Twitch badge (18/36/72)"),
+    "lbl_twitch_points_pack": ("Twitch баллы (28/56/112)", "Twitch points (28/56/112)"),
+    "lbl_7tv": ("7TV смайлик (128×128)", "7TV emote (128×128)"),
+    "lbl_bttv": ("BTTV смайлик (112×112)", "BTTV emote (112×112)"),
+
+    # --- WhatsApp ---
+    "tab_whatsapp_tip": ("Готовые пресеты стикеров WhatsApp",
+                         "Ready-made WhatsApp sticker presets"),
+    "col_wa_sticker": ("СТИКЕР · 512 PX", "STICKER · 512 PX"),
+    "col_wa_pack": ("НАБОР", "PACK"),
+    "preset_wa_static": ("Стикер WEBP", "Sticker WEBP"),
+    "preset_wa_animated": ("Анимированный WEBP", "Animated WEBP"),
+    "preset_wa_tray": ("Иконка набора 96 px", "Pack icon 96 px"),
+    "lbl_wa_static": ("WA Стикер (WEBP)", "WA Sticker (WEBP)"),
+    "lbl_wa_animated": ("WA Стикер анимированный", "WA Animated sticker"),
+    "lbl_wa_tray": ("WA Иконка набора (96)", "WA Pack icon (96)"),
+    "hint_wa_static": (
+        "Стикер WhatsApp: WEBP ровно {size}×{size} px, прозрачный фон, "
+        "не больше {limit} КБ.",
+        "WhatsApp sticker: WEBP of exactly {size}×{size} px, transparent "
+        "background, no larger than {limit} KB."),
+    "hint_wa_animated": (
+        "Анимированный стикер WhatsApp: WEBP {size}×{size} px, до {duration} сек, "
+        "не больше {limit} КБ — FPS подбирается автоматически.",
+        "WhatsApp animated sticker: WEBP {size}×{size} px, up to {duration} s, "
+        "no larger than {limit} KB — the FPS is chosen automatically."),
+    "hint_wa_tray": (
+        "Иконка набора WhatsApp: PNG {size}×{size} px, не больше {limit} КБ. "
+        "Нужна одна на весь набор.",
+        "WhatsApp pack icon: PNG {size}×{size} px, no larger than {limit} KB. "
+        "One is needed per pack."),
+
+    # --- режим вписывания в квадрат ---
+    "fill_square": ("Заполнить квадрат (обрезать края)", "Fill the square (crop edges)"),
+    "fill_square_tip": ("Включено — картинка заполняет квадрат целиком, лишнее по "
+                        "краям обрезается по центру. Выключено — вписывается целиком, "
+                        "а пустое место остаётся прозрачным.",
+                        "On — the picture fills the whole square and the overflow "
+                        "is cropped around the centre. Off — it fits whole and the "
+                        "spare room stays transparent."),
+    "fill_square_sticker_tip": ("Стикер Telegram не квадратный: одна его сторона "
+                                "512 px, другая — по пропорциям. Режим действует "
+                                "только на эмодзи.",
+                                "A Telegram sticker is not square: one side is "
+                                "512 px and the other follows the proportions. "
+                                "This mode only affects emoji."),
+
+    # --- вставка из буфера обмена ---
+    "menu_paste": ("Вставить из буфера (Ctrl+V)", "Paste from clipboard (Ctrl+V)"),
+    "paste_nothing": ("В буфере обмена нет картинки или файлов",
+                      "The clipboard holds no picture or files"),
+    "paste_added": ("Из буфера добавлено: {count}", "Added from the clipboard: {count}"),
+    "paste_failed": ("Не удалось сохранить картинку из буфера: {error}",
+                     "Could not save the clipboard picture: {error}"),
+    "drop_hint_paste": ("Ctrl+V — вставить картинку из буфера",
+                        "Ctrl+V pastes a picture from the clipboard"),
+
+    # --- предпросмотр в чате ---
+    "preview_title": ("Так результат будет выглядеть в чате",
+                      "This is how the result will look in chat"),
+    "preview_empty": ("Выберите файл в очереди — здесь появится предпросмотр",
+                      "Select a file in the queue to see a preview here"),
+    "preview_video_note": ("кадр из видео", "a frame from the video"),
+    "preview_user": ("зритель", "viewer"),
+    "preview_you": ("вы", "you"),
+    "preview_msg_twitch": ("отличная игра", "great play"),
+    "preview_msg_discord": ("смотрите, что получилось", "look what I made"),
+    "preview_msg_telegram": ("новый стикер", "new sticker"),
+    "preview_msg_whatsapp": ("держи", "here you go"),
+    "preview_zoom": ("крупно", "zoomed"),
+    "preview_today": ("Сегодня в 12:00", "Today at 12:00"),
+    "preview_pack": ("Мой набор стикеров", "My sticker pack"),
+
+    # --- проверка обновлений ---
+    "update_available": ("Доступна версия {version} — скачать",
+                         "Version {version} is available — download"),
+    "update_tip": ("Открыть страницу выпуска на GitHub. Проверку можно "
+                   "отключить в контекстном меню номера версии.",
+                   "Open the release page on GitHub. The check can be turned "
+                   "off from the version number's context menu."),
+    "update_check_toggle": ("Проверять обновления при запуске",
+                            "Check for updates at startup"),
+    "menu_open_log": ("Открыть папку журнала", "Open the log folder"),
     "hint_dc_sticker_png": (
         "Статичный стикер Discord: PNG, ровно {size}×{size} px, квадрат "
         "с прозрачным фоном, не больше {limit}.",
@@ -416,6 +535,82 @@ STRINGS = {
 
     "kb": ("{value} КБ", "{value} KB"),
     "mb": ("{value} МБ", "{value} MB"),
+
+    # --- ошибки обработки (errors.LocalizedError) ---
+    "err_source_missing": ("Исходный файл не найден: {name}",
+                           "Source file not found: {name}"),
+    "err_no_ffmpeg": ("FFmpeg не найден, а без него эту операцию не выполнить. "
+                      "Положите ffmpeg.exe и ffprobe.exe рядом с программой "
+                      "или добавьте FFmpeg в PATH.",
+                      "FFmpeg was not found, and this operation needs it. Put "
+                      "ffmpeg.exe and ffprobe.exe next to the application or add "
+                      "FFmpeg to PATH."),
+    "err_audio_from_non_video": ("Звук можно извлечь только из видео: у изображений, "
+                                 "GIF и анимированных картинок звуковой дорожки нет.",
+                                 "Audio can only be extracted from video: images, GIFs "
+                                 "and animated pictures have no audio track."),
+    "err_frames_need_motion": ("Покадровый разбор доступен только для видео, GIF "
+                               "и анимированных картинок.",
+                               "Frame extraction only works on video, GIFs and "
+                               "animated pictures."),
+    "err_static_image_target": ("Статичное изображение можно конвертировать только "
+                                "в JPG, PNG, WEBP, BMP или AVIF.",
+                                "A still image can only be converted to JPG, PNG, "
+                                "WEBP, BMP or AVIF."),
+    "err_unknown_format": ("Неизвестный выходной формат: {fmt}",
+                           "Unknown output format: {fmt}"),
+    "err_unsupported_input": ("Неподдерживаемый тип файла: {name}",
+                              "Unsupported file type: {name}"),
+    "err_needs_motion": ("«{target}» делается только из видео, GIF или анимированной "
+                         "картинки. Для неподвижного изображения выберите "
+                         "статичный вариант пресета.",
+                         "“{target}” can only be made from video, a GIF or an "
+                         "animated picture. For a still image pick the static "
+                         "version of the preset."),
+    "err_ffmpeg_stalled": ("FFmpeg не отвечает более {minutes} мин и был остановлен. "
+                           "Возможно, файл повреждён или использует неподдерживаемый "
+                           "кодек.",
+                           "FFmpeg did not respond for over {minutes} min and was "
+                           "stopped. The file may be damaged or use an unsupported "
+                           "codec."),
+    "err_ffmpeg_failed": ("FFmpeg завершился с ошибкой (код {code}). Подробности "
+                          "ниже:",
+                          "FFmpeg failed (code {code}). Details below:"),
+    "err_target_too_small": ("Целевой размер {kb} КБ слишком мал для этого файла. "
+                             "Увеличьте размер, обрежьте по времени или уменьшите "
+                             "разрешение.",
+                             "The target size of {kb} KB is too small for this file. "
+                             "Raise the size, trim the duration or lower the "
+                             "resolution."),
+    "err_too_many_frames": ("В анимации больше {frames} кадров.",
+                            "The animation has more than {frames} frames."),
+    "err_over_limit": ("Результат не удалось уложить в лимит {limit} КБ "
+                       "(получено {got} КБ). Сократите длительность или упростите "
+                       "анимацию.",
+                       "The result could not fit into {limit} KB (got {got} KB). "
+                       "Shorten the duration or simplify the animation."),
+    "err_limit_unreachable": ("Результат не удалось уложить в лимит {limit} КБ. "
+                              "Сократите длительность или упростите анимацию.",
+                              "The result could not fit into {limit} KB. Shorten the "
+                              "duration or simplify the animation."),
+    "err_image_over_limit": ("Не удалось уложиться в лимит {limit} КБ (получено "
+                             "{got} КБ). Упростите изображение или уменьшите "
+                             "детализацию.",
+                             "Could not fit into {limit} KB (got {got} KB). Simplify "
+                             "the image or reduce its detail."),
+    "err_image_over_limit_alpha": ("Не удалось уложиться в лимит {limit} КБ (получено "
+                                   "{got} КБ). Попробуйте формат WEBP — он сжимает "
+                                   "сильнее.",
+                                   "Could not fit into {limit} KB (got {got} KB). Try "
+                                   "the WEBP format — it compresses better."),
+    "err_zero_size": ("Изображение имеет нулевой размер и, вероятно, повреждено.",
+                      "The image has zero size and is probably damaged."),
+    "err_duration_over": ("Длительность {duration:.2f} сек превышает лимит {limit:g} сек.",
+                          "The duration of {duration:.2f} s exceeds the {limit:g} s "
+                          "limit."),
+    "err_duration_zero": ("Длительность фрагмента должна быть больше 0 секунд.",
+                          "The fragment must be longer than 0 seconds."),
+    "err_internal": ("Внутренняя ошибка: {detail}", "Internal error: {detail}"),
 }
 
 

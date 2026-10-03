@@ -18,13 +18,15 @@
 #   .\build_windows.ps1 -Variant without-ffmpeg      # только лёгкая
 #   .\build_windows.ps1 -FfmpegDir "D:\ffmpeg\bin"   # своя копия FFmpeg
 #   .\build_windows.ps1 -NoZip                       # без упаковки в zip
+#   .\build_windows.ps1 -Installer                   # плюс установщик (Inno Setup 6)
 
 param(
     [ValidateSet("both", "with-ffmpeg", "without-ffmpeg")]
     [string]$Variant = "both",
     [string]$Python = "py",
     [string]$FfmpegDir,
-    [switch]$NoZip
+    [switch]$NoZip,
+    [switch]$Installer
 )
 
 $ErrorActionPreference = "Stop"
@@ -176,6 +178,48 @@ DTTConvert $appVersion — сборка без FFmpeg
 
 if ($Variant -eq "both" -or $Variant -eq "with-ffmpeg") { Build-Variant "with-ffmpeg" $true }
 if ($Variant -eq "both" -or $Variant -eq "without-ffmpeg") { Build-Variant "without-ffmpeg" $false }
+
+if ($Installer) {
+    # Установщик собирается из готовой папки: ярлык в «Пуске», удаление
+    # через «Приложения», обновление поверх старой версии. На каждый
+    # собранный вариант — свой установщик: с FFmpeg для всех и лёгкий для
+    # тех, у кого FFmpeg уже стоит.
+    $setupVariants = switch ($Variant) {
+        "with-ffmpeg" { @("with-ffmpeg") }
+        "without-ffmpeg" { @("without-ffmpeg") }
+        default { @("with-ffmpeg", "without-ffmpeg") }
+    }
+    $candidates = @(
+        (Get-Command "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+        (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    $iscc = $candidates | Select-Object -First 1
+    if (-not $iscc) {
+        throw "Не найден Inno Setup 6 (ISCC.exe). Установите его: winget install JRSoftware.InnoSetup — или скачайте с https://jrsoftware.org/isdl.php"
+    }
+    if (!(Test-Path -LiteralPath $releaseDir)) {
+        New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+    }
+    foreach ($setupVariant in $setupVariants) {
+        Write-Host ""
+        Write-Host "=== Установщик ($setupVariant) ===" -ForegroundColor Cyan
+        Push-Location $PSScriptRoot
+        try {
+            & $iscc "/DAppVersion=$appVersion" "/DVariant=$setupVariant" "installer.iss"
+            if ($LASTEXITCODE -ne 0) { throw "Сборка установщика «$setupVariant» завершилась с ошибкой." }
+        } finally {
+            Pop-Location
+        }
+        # Имя — как у архивов: вариант виден прямо в имени файла.
+        $setupName = "$appName-$appVersion-windows-x64-$setupVariant-setup.exe"
+        $setupPath = Join-Path $releaseDir $setupName
+        $setupSize = [math]::Round(((Get-Item -LiteralPath $setupPath).Length / 1MB), 1)
+        Write-Host "Установщик: $setupPath ($setupSize МБ)" -ForegroundColor Green
+        $script:built += [pscustomobject]@{ Вариант = "setup ($setupVariant)"; Архив = $setupName; "МБ" = $setupSize }
+    }
+}
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan

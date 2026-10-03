@@ -3,13 +3,17 @@
 """
 
 APP_NAME = "DTTConvert"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 # Пустая стадия — релиз. Для беты сюда возвращается "beta".
 APP_STAGE = ""
 
 # Идентификатор для QSettings и панели задач Windows.
 ORGANIZATION = "DTTConvert"
 APP_ID = "DTTConvert.App"
+
+# Репозиторий проекта: отсюда берутся сведения о новых выпусках.
+GITHUB_REPO = "Hxrmfull/DTTConvert"
+RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
 
 # Под каким именем настройки лежали до переименования из Media Converter
 # Studio. Нужно один раз, чтобы не потерять размер окна, папку сохранения

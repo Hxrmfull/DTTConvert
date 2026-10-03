@@ -62,8 +62,10 @@ def sticker_scale_filter():
     )
 
 
-def emoji_scale_filter():
-    """FFmpeg-фильтр: ровно 100x100 с прозрачным фоном."""
+def emoji_scale_filter(fill=False):
+    """FFmpeg-фильтр: ровно 100x100 — с прозрачными полями или с обрезкой краёв."""
+    if fill:
+        return "scale=100:100:force_original_aspect_ratio=increase,crop=100:100"
     return (
         "scale=100:100:force_original_aspect_ratio=decrease,"
         "pad=100:100:(ow-iw)/2:(oh-ih)/2:color=0x00000000"
@@ -71,14 +73,15 @@ def emoji_scale_filter():
 
 
 def build_telegram_video_filter(target, max_duration=MAX_VIDEO_DURATION_SEC,
-                                extra_filters=None):
+                                extra_filters=None, fill=False):
     """Цепочка фильтров: обрезка по длительности + правки кадра + масштаб.
 
     extra_filters — ручные правки геометрии (кадрирование, поворот). Они
     идут до масштабирования: обрезать нужно исходный кадр, а не уже
     подогнанный под 512 px.
     """
-    scale = sticker_scale_filter() if target == "sticker" else emoji_scale_filter()
+    # У стикера одна сторона 512, другая — по пропорциям: заполнять нечего.
+    scale = sticker_scale_filter() if target == "sticker" else emoji_scale_filter(fill)
     parts = [f"trim=duration={max_duration}", "setpts=PTS-STARTPTS"]
     parts.extend(extra_filters or [])
     parts.append(scale)
@@ -98,17 +101,18 @@ def validate_webm_file(path, duration_sec=None):
     """Проверка выходного WEBM на соответствие лимитам Telegram."""
     import os
 
+    from errors import LocalizedRuntimeError
+
     issues = []
     size = os.path.getsize(path)
     if size > MAX_WEBM_SIZE_BYTES:
-        issues.append(
-            f"Размер файла {size // 1024} KB превышает лимит 256 KB. "
-            "Попробуйте упростить анимацию или уменьшить длительность."
-        )
+        issues.append(LocalizedRuntimeError(
+            "err_over_limit", limit=MAX_WEBM_SIZE_BYTES // 1024, got=size // 1024
+        ))
     if duration_sec is not None and duration_sec > MAX_VIDEO_DURATION_SEC + 0.05:
-        issues.append(
-            f"Длительность {duration_sec:.2f} сек превышает лимит {MAX_VIDEO_DURATION_SEC:.0f} сек."
-        )
+        issues.append(LocalizedRuntimeError(
+            "err_duration_over", duration=duration_sec, limit=MAX_VIDEO_DURATION_SEC
+        ))
     return issues
 
 

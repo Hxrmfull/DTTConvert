@@ -41,7 +41,7 @@ import ffmpeg_utils, image_utils, worker
 from ffmpeg_utils import FFmpegProcessor, INDETERMINATE_PROGRESS, scaled_progress
 from job_model import JobSettings, ConversionJob
 from worker import ConversionWorker, resolve_output_path, default_worker_count
-from PIL import Image
+from PIL import Image, ImageDraw
 
 fp = FFmpegProcessor()
 IMG = os.path.join(WORK, "img.png")
@@ -281,7 +281,7 @@ check("W1 конвейер 2 задачи", t_pipeline)
 def t_missing():
     fin=[]; w=ConversionWorker([mkjob(os.path.join(WORK,"нет.mp4"),"gif")], max_workers=1)
     w.file_finished.connect(lambda i,ok,m: fin.append((ok,m))); w.run()
-    assert fin and not fin[0][0] and "не найден" in fin[0][1].lower(), fin
+    assert fin and not fin[0][0] and "не найден" in str(fin[0][1]).lower(), fin
 check("W2 отсутствующий файл -> понятная ошибка", t_missing)
 
 def t_overwrite():
@@ -669,7 +669,6 @@ def t_alpha_survives():
     frames=[]
     for i in range(10):
         im=Image.new("RGBA",(160,160),(0,0,0,0))
-        from PIL import ImageDraw
         ImageDraw.Draw(im).ellipse((10+i,10,150,150),fill=(255,90,40,128))
         frames.append(im)
     frames[0].save(src,save_all=True,append_images=frames[1:],duration=40,loop=0)
@@ -781,6 +780,230 @@ def t_apng_job_from_video():
     ConversionWorker([job])._process_job(0,job)
     assert os.path.isfile(os.path.join(WORK,"люси1.png"))
 check("N3 задача APNG проходит через обработчик очереди", t_apng_job_from_video)
+
+# ---------- Исправления и ускорение (версия 1.1) ----------
+LONG = os.path.join(WORK, "длинный.mp4")
+subprocess.run(["ffmpeg","-y","-f","lavfi","-i","testsrc=duration=8:size=320x240:rate=25",
+                "-c:v","libx264","-pix_fmt","yuv420p",LONG],check=True,capture_output=True)
+
+def t_discord_apng_trim():
+    # Раньше -t всегда равнялся 5 сек, и конец обрезки терялся.
+    out=os.path.join(WORK,"dc_trim.png")
+    fp.convert_discord_apng(LONG,out,320,512*1024,max_duration=5.0,fps_cap=10,
+                            trim=(2.0,1.0))
+    frames=fp.get_frame_count(out)
+    assert frames and frames<=12, f"кадров {frames}: обрезка до 1 сек не сработала"
+    out2=os.path.join(WORK,"dc_trim_long.png")
+    fp.convert_discord_apng(LONG,out2,320,512*1024,max_duration=5.0,fps_cap=10,
+                            trim=(0.0,7.0))
+    frames2=fp.get_frame_count(out2)
+    assert frames2 and frames2<=52, f"кадров {frames2}: лимит 5 сек не сработал"
+check("V1 Discord APNG учитывает конец обрезки и лимит 5 сек", t_discord_apng_trim)
+
+def t_errors_translated():
+    import i18n
+    from errors import LocalizedError, message_text
+    job=mkjob(IMG,"mp3")
+    try:
+        ConversionWorker([job])._process_job(0,job)
+    except LocalizedError as e:
+        err=e
+    else:
+        raise AssertionError("ошибка не возникла")
+    was=i18n.current_language()
+    try:
+        i18n.set_language("en"); en=message_text(err)
+        i18n.set_language("ru"); ru=message_text(err)
+    finally:
+        i18n.set_language(was)
+    assert "audio" in en.lower() and "звук" in ru.lower(), (en, ru)
+    # Сигнал несёт саму ошибку, а не готовую строку: язык выбирается при показе.
+    fin=[]; w=ConversionWorker([mkjob(IMG,"mp3")],max_workers=1)
+    w.file_finished.connect(lambda i,ok,m: fin.append(m)); w.run()
+    assert isinstance(fin[0],LocalizedError), type(fin[0])
+check("V2 ошибки обработки переводятся при показе", t_errors_translated)
+
+def t_no_russian_literals_in_core():
+    # Всё, что видит пользователь, должно идти через ключи перевода.
+    import re
+    for name in ("worker.py","ffmpeg_utils.py","image_utils.py","telegram_utils.py"):
+        src=open(os.path.join(PROJECT_DIR,name),encoding="utf-8").read()
+        for m in re.finditer(r"raise\s+\w*Error\(\s*f?\"([^\"]*)",src):
+            assert not re.search("[а-яА-Я]",m.group(1)), f"{name}: {m.group(0)[:80]}"
+check("V3 в ядре не осталось ошибок с русским текстом вместо ключа", t_no_russian_literals_in_core)
+
+def t_new_inputs():
+    mkv=os.path.join(WORK,"запись.mkv"); mov=os.path.join(WORK,"айфон.mov")
+    for path in (mkv,mov):
+        subprocess.run(["ffmpeg","-y","-f","lavfi","-i","testsrc=duration=1:size=160x120:rate=10",
+                        "-c:v","libx264","-pix_fmt","yuv420p",path],check=True,capture_output=True)
+        assert worker.get_category(path)=="video", worker.get_category(path)
+        job=ConversionJob(input_path=path,output_dir=WORK,source_path=path,
+                          settings=JobSettings(output_format="mp4"))
+        ConversionWorker([job])._process_job(0,job)
+    assert os.path.isfile(os.path.join(WORK,"запись.mp4"))
+    assert os.path.isfile(os.path.join(WORK,"айфон.mp4"))
+    tif=os.path.join(WORK,"скан.tiff"); Image.new("RGB",(64,32),(9,9,9)).save(tif)
+    assert worker.get_category(tif)=="image"
+check("V4 MKV, MOV и TIFF принимаются на вход", t_new_inputs)
+
+def t_twitch_pack_shared_fps():
+    calls=[]
+    original=fp._run_with_progress
+    def spy(cmd,duration,cb):
+        calls.append(cmd); return original(cmd,duration,cb)
+    fp._run_with_progress=spy
+    try:
+        d=os.path.join(WORK,"pack"); os.makedirs(d,exist_ok=True)
+        job=ConversionJob(input_path=SRC,output_dir=d,source_path=SRC,
+                          settings=JobSettings(output_format="twitch_animated_pack"))
+        w=ConversionWorker([job]); w._processors[threading.get_ident()]=fp
+        w._process_job(0,job)
+    finally:
+        fp._run_with_progress=original
+    made=sorted(f for f in os.listdir(d) if f.endswith(".gif"))
+    assert len(made)==3, made
+    rates=set()
+    for f in made:
+        info=fp.get_media_info(os.path.join(d,f)); rates.add(round(info["fps"] or 0))
+        assert os.path.getsize(os.path.join(d,f))<=1024*1024
+    assert len(rates)==1, f"у размеров комплекта разная частота: {rates}"
+    assert len(calls)<=5, f"запусков FFmpeg {len(calls)} — подбор не переиспользован"
+check("V5 комплект Twitch: одна частота на все размеры и мало запусков", t_twitch_pack_shared_fps)
+
+def t_single_pass_gif():
+    calls=[]
+    original=fp._run_with_progress
+    def spy(cmd,duration,cb):
+        calls.append(cmd); return original(cmd,duration,cb)
+    fp._run_with_progress=spy
+    try:
+        out=os.path.join(WORK,"onepass.gif")
+        fp.video_to_gif(SRC,out,160,0,True,10,trim=(1.0,1.0))
+    finally:
+        fp._run_with_progress=original
+    assert len(calls)==1, f"GIF собирался за {len(calls)} запуска"
+    assert abs(fp.get_duration(out)-1.0)<0.25, fp.get_duration(out)
+    # А при огромном объёме кадров — по-старому, в два прохода.
+    assert ffmpeg_utils.frames_memory(3840,2160,30,600)>ffmpeg_utils.SINGLE_PASS_GIF_MEMORY
+check("V6 короткий GIF собирается за один запуск FFmpeg", t_single_pass_gif)
+
+def t_search_matches_binary():
+    # Ускоренный подбор обязан давать тот же ответ, что честный перебор.
+    import random
+    rnd=random.Random(7)
+    for _ in range(300):
+        cap=rnd.randint(1,30); boundary=rnd.randint(0,cap)
+        per_fps=rnd.uniform(5_000,80_000); limit=int(per_fps*boundary+per_fps/2) if boundary else 1
+        tried=[]
+        def encode(fps,dest,_cb):
+            tried.append(fps)
+            with open(dest,"wb") as h: h.write(b"x"*int(per_fps*fps))
+        def fits(path):
+            return None if os.path.getsize(path)<=limit else RuntimeError("big")
+        try:
+            _blob,got=fp._search_fps_within_limit(None,None,cap,encode,fits,None,
+                                                  RuntimeError("none"),limit_bytes=limit)
+        except RuntimeError:
+            got=0
+        assert got==boundary, (cap,boundary,got,tried)
+check("V7 ускоренный подбор FPS находит ту же границу", t_search_matches_binary)
+
+def t_twitch_long_helpers():
+    from twitch_utils import twitch_effective_fps, twitch_smooth_duration_limit, TWITCH_MIN_SMOOTH_FPS
+    assert twitch_effective_fps(2)==15
+    assert twitch_effective_fps(30)==2
+    assert twitch_effective_fps(twitch_smooth_duration_limit())==TWITCH_MIN_SMOOTH_FPS
+check("V8 расчёт плавности анимации Twitch", t_twitch_long_helpers)
+
+# ---------- Новые пресеты ----------
+ANIM_WEBP = os.path.join(WORK, "эмоут.webp")
+_frames=[]
+for i in range(20):
+    im=Image.new("RGBA",(200,100),(0,0,0,0))
+    ImageDraw.Draw(im).ellipse((10+i*3,10,90+i*3,90),fill=(255,120,40,200))
+    _frames.append(im)
+_frames[0].save(ANIM_WEBP,save_all=True,append_images=_frames[1:],duration=50,loop=0)
+WIDE = os.path.join(WORK, "широкая.png")
+Image.new("RGBA",(400,100),(20,200,90,255)).save(WIDE)
+
+def run_job(path, fmt, out_dir, **kw):
+    os.makedirs(out_dir, exist_ok=True)
+    job=ConversionJob(input_path=path,output_dir=out_dir,source_path=path,
+                      settings=JobSettings(output_format=fmt,**kw))
+    fin=[]; w=ConversionWorker([job],max_workers=1)
+    w.file_finished.connect(lambda i,ok,m: fin.append((ok,str(m))))
+    w.run()
+    assert fin and fin[0][0], fin
+    return sorted(os.listdir(out_dir))
+
+def t_twitch_badges_points():
+    d=os.path.join(WORK,"badges"); made=run_job(IMG,"twitch_badge_pack",d)
+    assert made==["img_twitch_badge_18.png","img_twitch_badge_36.png","img_twitch_badge_72.png"], made
+    for f in made:
+        assert os.path.getsize(os.path.join(d,f))<=25*1024
+    d2=os.path.join(WORK,"points"); made2=run_job(SRC,"twitch_points_pack",d2)
+    sizes=[]
+    for f in made2:
+        with Image.open(os.path.join(d2,f)) as im: sizes.append(im.size[0])
+        assert os.path.getsize(os.path.join(d2,f))<=25*1024
+    assert sorted(sizes)==[28,56,112], sizes
+check("N4 значки подписки и иконки баллов Twitch: размеры и лимит 25 КБ", t_twitch_badges_points)
+
+def t_7tv_bttv_auto():
+    d=os.path.join(WORK,"7tv_anim"); made=run_job(ANIM_WEBP,"seventv_emote",d)
+    assert made==["эмоут_7tv.webp"], made
+    with Image.open(os.path.join(d,made[0])) as im:
+        assert im.size==(128,128) and getattr(im,"n_frames",1)>1, (im.size, getattr(im,"n_frames",1))
+    d2=os.path.join(WORK,"7tv_static"); made2=run_job(IMG,"seventv_emote",d2)
+    assert made2==["img_7tv.png"], made2
+    d3=os.path.join(WORK,"bttv"); made3=run_job(SRC,"bttv_emote",d3)
+    assert made3==["люси1_bttv.gif"], made3
+    assert os.path.getsize(os.path.join(d3,made3[0]))<=1024*1024
+    assert fp.get_media_info(os.path.join(d3,made3[0]))["width"]==112
+check("N5 7TV и BTTV: анимация из анимации, PNG из картинки", t_7tv_bttv_auto)
+
+def t_whatsapp():
+    d=os.path.join(WORK,"wa"); made=run_job(IMG,"whatsapp_static",d)
+    out=os.path.join(d,made[0])
+    with Image.open(out) as im: assert im.format=="WEBP" and im.size==(512,512)
+    assert os.path.getsize(out)<=100*1024
+    made=run_job(LONG,"whatsapp_animated",os.path.join(WORK,"wa_anim"))
+    out=os.path.join(WORK,"wa_anim",made[0])
+    with Image.open(out) as im:
+        assert im.size==(512,512) and im.n_frames>1, (im.size, im.n_frames)
+        total=0
+        for k in range(im.n_frames):
+            im.seek(k); total+=im.info.get("duration",0)
+    assert os.path.getsize(out)<=500*1024, os.path.getsize(out)
+    assert total<=10_050, f"анимация {total} мс длиннее 10 сек"
+    made=run_job(IMG,"whatsapp_tray",os.path.join(WORK,"wa_tray"))
+    with Image.open(os.path.join(WORK,"wa_tray",made[0])) as im:
+        assert im.size==(96,96) and im.format=="PNG"
+    try:
+        run_job(IMG,"whatsapp_animated",os.path.join(WORK,"wa_bad"))
+    except AssertionError as e:
+        assert "только из видео" in str(e), e
+    else:
+        raise AssertionError("анимированный стикер из картинки должен давать ошибку")
+check("N6 WhatsApp: стикер, анимированный стикер и иконка набора по лимитам", t_whatsapp)
+
+def t_fill_square():
+    fit=os.path.join(WORK,"fit"); fill=os.path.join(WORK,"fill")
+    run_job(WIDE,"discord_emoji_png",fit)
+    run_job(WIDE,"discord_emoji_png",fill,fill_square=True)
+    with Image.open(os.path.join(fit,"широкая_dc_emoji.png")) as im:
+        corner_fit=im.convert("RGBA").getpixel((2,2))[3]
+    with Image.open(os.path.join(fill,"широкая_dc_emoji.png")) as im:
+        corner_fill=im.convert("RGBA").getpixel((2,2))[3]
+    assert corner_fit==0 and corner_fill==255, (corner_fit, corner_fill)
+    vid=os.path.join(WORK,"fill_gif"); run_job(SRC,"twitch_animated_112",vid,fill_square=True)
+    png=os.path.join(WORK,"fill_check.png")
+    subprocess.run(["ffmpeg","-y","-i",os.path.join(vid,"люси1_twitch_112.gif"),"-frames:v","1",png],
+                   check=True,capture_output=True)
+    with Image.open(png) as im:
+        assert im.convert("RGBA").getpixel((1,1))[3]==255, "в режиме заполнения поля остались прозрачными"
+check("N7 режим «заполнить квадрат» обрезает края вместо полей", t_fill_square)
 
 print()
 failed=[r for r in results if r[1]!="OK"]

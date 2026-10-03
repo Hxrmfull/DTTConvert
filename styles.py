@@ -1,4 +1,10 @@
-"""Тёмная тема приложения.
+"""Тёмная тема приложения и её варианты для вкладок площадок.
+
+Все цвета живут в палитрах: роль → цвет. Таблица стилей — шаблон с
+подстановками вида $surface, поэтому одна и та же разметка собирается
+в основной теме и в темах Telegram, Twitch и Discord. Темы площадок
+меняют только цвета: отступы, рамки и начертание шрифта общие, иначе
+вкладки разъехались бы по высоте (у тестов вёрстки запас около 20 px).
 
 Стрелки списков и счётчиков Qt не умеет рисовать средствами QSS
 (CSS-приём с нулевым размером и рамками даёт квадраты), поэтому нужные
@@ -7,39 +13,224 @@
 
 import os
 import tempfile
+from string import Template
 
-_STYLESHEET_TEMPLATE = """
+THEME_MAIN = "main"
+THEME_TELEGRAM = "telegram"
+THEME_TWITCH = "twitch"
+THEME_DISCORD = "discord"
+THEME_WHATSAPP = "whatsapp"
+
+# Основная тема. Роли названы по назначению, а не по цвету: одинаковые
+# значения у разных ролей — совпадение, темы площадок их разводят.
+BASE_PALETTE = {
+    "surface": "#24252e",
+    "border_subtle": "#3a3b48",
+    "card_border": "#45475f",
+    "text": "#e6e6e6",
+    "bright_text": "#ffffff",
+    "hover_bg": "#2c2e3a",
+    "accent": "#6c63ff",
+    "window_bg": "#1e1f26",
+    "selected_bg": "#3a3d63",
+    "accent_hover": "#7a72ff",
+    "check_border": "#4a4c60",
+    "button_hover_bg": "#3d4060",
+    "hover_border": "#565a80",
+    "disabled_text": "#55566a",
+    "danger_border": "#6c3a44",
+    "accent_bright": "#8a83ff",
+    "muted_text": "#a9abb8",
+    "sunken_bg": "#202129",
+    "title_text": "#f5f5f7",
+    "hint_text": "#9a9ba5",
+    "section_text": "#8a8dfc",
+    "tab_bg": "#292a34",
+    "tab_text": "#aeb0bc",
+    "tab_hover_bg": "#323440",
+    "tab_checked_border": "#676b9c",
+    "button_bg": "#33354a",
+    "button_text": "#f0f0f5",
+    "button_border": "#55587a",
+    "button_pressed": "#2a2c3e",
+    "disabled_bg": "#232430",
+    "disabled_border": "#34364a",
+    "start_disabled_bg": "#2b2b3a",
+    "start_disabled_text": "#6a6b7c",
+    "stop_bg": "#4a2c33",
+    "stop_text": "#ffb3bb",
+    "stop_hover": "#5c333c",
+    "stop_disabled_bg": "#2b2629",
+    "stop_disabled_border": "#45383c",
+    "stop_disabled_text": "#6b5c60",
+    "primary_bg": "#3b3670",
+    "primary_hover": "#494290",
+    "quiet_bg": "#2a2b35",
+    "quiet_hover_bg": "#3a2f34",
+    "quiet_hover_text": "#ffc9cf",
+    "selected_hover": "#464a76",
+    "callout_text": "#c2c4d0",
+    "callout_bg": "#2b2d3b",
+    "caption_text": "#9ea2c8",
+    "caption_line": "#3c3f5c",
+    # Было #7e808c: на фоне карточки контраст 3,9 — мелкий текст читался
+    # с трудом. Теперь 4,6, по WCAG AA.
+    "note_text": "#8a8c98",
+    "note_line": "#33343f",
+    "bottom_line": "#2f3040",
+    "faint_text": "#5f6070",
+    "popup_bg": "#272834",
+    "popup_hover": "#32344a",
+    "popup_selected": "#4a4d7a",
+    "check_text": "#d7d8e0",
+    # Цвета, которые рисует сам Python-код (тумблеры, точки статуса,
+    # пустая очередь, заголовки групп в списке форматов).
+    "toggle_track_off": "#383a48",
+    "toggle_knob_off": "#b9bbc9",
+    "toggle_track_off_disabled": "#26272f",
+    "toggle_track_on_disabled": "#3a3760",
+    "arrow": "#b9bbc9",
+    "arrow_off": "#5f6070",
+    "format_header": "#74768a",
+    "drop_border": "#3f4152",
+    "drop_text": "#6f7180",
+    "drop_text_active": "#9a95ff",
+    "status_pending": "#6f7180",
+    "status_done": "#4caf7d",
+    "status_error": "#e05561",
+    "status_stopped": "#c9a227",
+    "warning_text": "#ff6b6b",
+}
+
+# Темы площадок: только то, что отличается от основной. Цвета взяты из
+# тёмных тем самих площадок, чтобы вкладка узнавалась с первого взгляда.
+# Twitch нельзя ограничить одним акцентом: его фиолетовый почти совпадает
+# с акцентом программы, поэтому меняются и фоны.
+PLATFORM_OVERRIDES = {
+    THEME_TWITCH: {
+        "surface": "#18181b", "card_border": "#3a3a3d",
+        "border_subtle": "#3a3a3d", "hover_bg": "#26262c",
+        "text": "#efeff1", "bright_text": "#ffffff",
+        "accent": "#9146ff", "accent_hover": "#a970ff", "accent_bright": "#bf94ff",
+        "selected_bg": "#3f2a6b", "selected_hover": "#4d3384",
+        "tab_bg": "#1f1f23", "tab_text": "#adadb8", "tab_hover_bg": "#2a2a30",
+        "tab_checked_border": "#9146ff",
+        "button_bg": "#2f2f35", "button_text": "#efeff1", "button_border": "#53535f",
+        "button_hover_bg": "#3a3a44", "hover_border": "#7a7a88",
+        "button_pressed": "#232327",
+        "primary_bg": "#772ce8", "primary_hover": "#9146ff",
+        "callout_bg": "#232327", "callout_text": "#c8c8d0",
+        "caption_text": "#c3a8f5", "caption_line": "#3a3a3d",
+        "note_text": "#9b9ba8", "note_line": "#2f2f35",
+        "popup_bg": "#1f1f23", "popup_hover": "#2f2f35", "popup_selected": "#3f2a6b",
+        "check_border": "#53535f", "check_text": "#dedee3",
+        "section_text": "#bf94ff", "hint_text": "#adadb8",
+        "toggle_track_off": "#35353b", "toggle_track_on_disabled": "#3b2d5c",
+    },
+    THEME_DISCORD: {
+        "surface": "#2b2d31", "card_border": "#3f4147",
+        "border_subtle": "#3f4147", "hover_bg": "#35373c",
+        "text": "#dbdee1", "bright_text": "#ffffff",
+        "accent": "#5865f2", "accent_hover": "#6d78f4", "accent_bright": "#8891f7",
+        "selected_bg": "#3c4270", "selected_hover": "#474e85",
+        "tab_bg": "#232428", "tab_text": "#b5bac1", "tab_hover_bg": "#35373c",
+        "tab_checked_border": "#5865f2",
+        "button_bg": "#4e5058", "button_text": "#ffffff", "button_border": "#5c5f66",
+        "button_hover_bg": "#5c5f68", "hover_border": "#80848e",
+        "button_pressed": "#3f4147",
+        "primary_bg": "#5865f2", "primary_hover": "#4752c4",
+        "callout_bg": "#232428", "callout_text": "#c4c9ce",
+        "caption_text": "#b5bac1", "caption_line": "#3f4147",
+        "note_text": "#9aa0aa", "note_line": "#3f4147",
+        "popup_bg": "#232428", "popup_hover": "#35373c", "popup_selected": "#404249",
+        "check_border": "#5c5f66", "check_text": "#dbdee1",
+        "section_text": "#8891f7", "hint_text": "#b5bac1",
+        "toggle_track_off": "#4e5058", "toggle_track_on_disabled": "#3a3f6e",
+    },
+    THEME_TELEGRAM: {
+        "surface": "#17212b", "card_border": "#2b3a4a",
+        "border_subtle": "#2b3a4a", "hover_bg": "#202b36",
+        "text": "#f5f5f5", "bright_text": "#ffffff",
+        "accent": "#2ea6ff", "accent_hover": "#4cb4ff", "accent_bright": "#64b5ef",
+        "selected_bg": "#2b5278", "selected_hover": "#33608c",
+        "tab_bg": "#1e2833", "tab_text": "#a9b7c6", "tab_hover_bg": "#253445",
+        "tab_checked_border": "#2ea6ff",
+        "button_bg": "#232e3c", "button_text": "#f5f5f5", "button_border": "#3a4d63",
+        "button_hover_bg": "#2b3b4d", "hover_border": "#4f6a88",
+        "button_pressed": "#1b2531",
+        "primary_bg": "#2b5278", "primary_hover": "#33608c",
+        "callout_bg": "#1e2c3a", "callout_text": "#c0ccd8",
+        "caption_text": "#8fa3b8", "caption_line": "#2b3a4a",
+        "note_text": "#8496a9", "note_line": "#2b3a4a",
+        "popup_bg": "#1e2833", "popup_hover": "#253445", "popup_selected": "#2b5278",
+        "check_border": "#3a4d63", "check_text": "#e1e6eb",
+        "section_text": "#64b5ef", "hint_text": "#8fa3b8",
+        "toggle_track_off": "#2b3a4a", "toggle_track_on_disabled": "#22405e",
+    },
+    THEME_WHATSAPP: {
+        "surface": "#111b21", "card_border": "#2a3942",
+        "border_subtle": "#2a3942", "hover_bg": "#202c33",
+        "text": "#e9edef", "bright_text": "#ffffff",
+        "accent": "#00a884", "accent_hover": "#06cf9c", "accent_bright": "#25d366",
+        "selected_bg": "#005c4b", "selected_hover": "#006e5a",
+        "tab_bg": "#202c33", "tab_text": "#aebac1", "tab_hover_bg": "#2a3942",
+        "tab_checked_border": "#00a884",
+        "button_bg": "#2a3942", "button_text": "#e9edef", "button_border": "#3b4a54",
+        "button_hover_bg": "#33444f", "hover_border": "#54656f",
+        "button_pressed": "#1f2c33",
+        "primary_bg": "#005c4b", "primary_hover": "#006e5a",
+        "callout_bg": "#1f2c33", "callout_text": "#c5ced3",
+        "caption_text": "#99a8b1", "caption_line": "#2a3942",
+        "note_text": "#8f9ea8", "note_line": "#2a3942",
+        "popup_bg": "#233138", "popup_hover": "#2a3942", "popup_selected": "#005c4b",
+        "check_border": "#3b4a54", "check_text": "#d1d7db",
+        "section_text": "#25d366", "hint_text": "#99a8b1",
+        "toggle_track_off": "#2a3942", "toggle_track_on_disabled": "#0b4a3e",
+    },
+}
+
+THEMES = (THEME_MAIN, THEME_TELEGRAM, THEME_TWITCH, THEME_DISCORD, THEME_WHATSAPP)
+
+
+def palette(theme=THEME_MAIN):
+    """Полная палитра темы: основная плюс отличия площадки."""
+    colors = dict(BASE_PALETTE)
+    colors.update(PLATFORM_OVERRIDES.get(theme, {}))
+    return colors
+
+
+_STYLESHEET_TEMPLATE = Template("""
 QWidget {
-    background-color: #1e1f26;
-    color: #e6e6e6;
+    background-color: $window_bg;
+    color: $text;
     font-family: "Segoe UI", "Ubuntu", "Cantarell", sans-serif;
     font-size: 13px;
 }
 
 QMainWindow {
-    background-color: #1e1f26;
+    background-color: $window_bg;
 }
 
 /* Фон прозрачный: иначе подписи рисуют прямоугольник цвета окна
    поверх более светлой карточки настроек. */
 QLabel {
-    color: #e6e6e6;
+    color: $text;
     background: transparent;
 }
 
 QLabel#TitleLabel {
     font-size: 16px;
     font-weight: 600;
-    color: #f5f5f7;
+    color: $title_text;
 }
 
 QLabel#HintLabel {
-    color: #9a9ba5;
+    color: $hint_text;
     font-size: 12px;
 }
 
 QLabel#SectionLabel {
-    color: #8a8dfc;
+    color: $section_text;
     font-weight: 600;
     font-size: 13px;
     padding: 0 0 2px 2px;
@@ -49,9 +240,9 @@ QLabel#SectionLabel {
    но Qt не рисует дуги скруглённых углов у его ::pane — рамка получалась
    разорванной. Обычный виджет скругляется корректно. */
 QPushButton#TabButton {
-    background: #292a34;
-    color: #aeb0bc;
-    border: 1px solid #3a3b48;
+    background: $tab_bg;
+    color: $tab_text;
+    border: 1px solid $border_subtle;
     border-radius: 6px;
     /* Поля по бокам скромные: вкладок четыре, и при 16 px самая длинная
        подпись переставала помещаться в узкую правую панель и обрезалась. */
@@ -60,29 +251,29 @@ QPushButton#TabButton {
 }
 
 QPushButton#TabButton:hover {
-    background: #323440;
-    color: #e6e6e6;
+    background: $tab_hover_bg;
+    color: $text;
 }
 
 QPushButton#TabButton:checked {
-    background: #3a3d63;
-    color: #ffffff;
-    border-color: #676b9c;
+    background: $selected_bg;
+    color: $bright_text;
+    border-color: $tab_checked_border;
     font-weight: 600;
 }
 
 /* Фон и рамку рисует контейнер: Qt не закрашивает фон под полосой
    прокрутки, и в углах карточки просвечивал фон окна. */
 QFrame#SettingsCardFrame {
-    background: #24252e;
-    border: 1px solid #45475f;
+    background: $surface;
+    border: 1px solid $card_border;
     border-radius: 8px;
 }
 
 /* Непрозрачный фон цвета карточки: под полосой прокрутки Qt рисует
    фон окна, а сюда полоса уже не достаёт до скруглённых углов. */
 QScrollArea#SettingsScroll {
-    background: #24252e;
+    background: $surface;
     border: none;
 }
 
@@ -103,8 +294,8 @@ QWidget#SettingsPage {
 }
 
 QListWidget {
-    background-color: #24252e;
-    border: 1px solid #45475f;
+    background-color: $surface;
+    border: 1px solid $card_border;
     border-radius: 8px;
     padding: 6px;
     outline: none;
@@ -117,63 +308,63 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background-color: #3a3d63;
-    color: #ffffff;
+    background-color: $selected_bg;
+    color: $bright_text;
 }
 
 QListWidget::item:hover {
-    background-color: #2c2e3a;
+    background-color: $hover_bg;
 }
 
 QPushButton {
-    background-color: #33354a;
-    color: #f0f0f5;
-    border: 1px solid #55587a;
+    background-color: $button_bg;
+    color: $button_text;
+    border: 1px solid $button_border;
     border-radius: 6px;
     padding: 8px 14px;
     font-weight: 500;
 }
 
 QPushButton:hover {
-    background-color: #3d4060;
-    border: 1px solid #565a80;
+    background-color: $button_hover_bg;
+    border: 1px solid $hover_border;
 }
 
 QPushButton:pressed {
-    background-color: #2a2c3e;
+    background-color: $button_pressed;
 }
 
 /* Недоступная кнопка: заметно бледнее и без рамки-«кнопочности»,
    чтобы её нельзя было спутать с активной. */
 QPushButton:disabled {
-    background-color: #232430;
-    color: #55566a;
-    border: 1px dashed #34364a;
+    background-color: $disabled_bg;
+    color: $disabled_text;
+    border: 1px dashed $disabled_border;
 }
 
 QPushButton#StartButton {
-    background-color: #6c63ff;
-    border: 1px solid #7a72ff;
-    color: #ffffff;
+    background-color: $accent;
+    border: 1px solid $accent_hover;
+    color: $bright_text;
     font-weight: 700;
     padding: 10px 20px;
     font-size: 14px;
 }
 
 QPushButton#StartButton:hover {
-    background-color: #7a72ff;
+    background-color: $accent_hover;
 }
 
 QPushButton#StartButton:disabled {
-    background-color: #2b2b3a;
-    border: 1px dashed #45475f;
-    color: #6a6b7c;
+    background-color: $start_disabled_bg;
+    border: 1px dashed $card_border;
+    color: $start_disabled_text;
 }
 
 QPushButton#StopButton {
-    background-color: #4a2c33;
-    border: 1px solid #6c3a44;
-    color: #ffb3bb;
+    background-color: $stop_bg;
+    border: 1px solid $danger_border;
+    color: $stop_text;
     /* Те же метрики, что у StartButton, иначе кнопки разной высоты. */
     font-weight: 700;
     padding: 10px 20px;
@@ -181,39 +372,39 @@ QPushButton#StopButton {
 }
 
 QPushButton#StopButton:hover {
-    background-color: #5c333c;
+    background-color: $stop_hover;
 }
 
 QPushButton#StopButton:disabled {
-    background-color: #2b2629;
-    border: 1px dashed #45383c;
-    color: #6b5c60;
+    background-color: $stop_disabled_bg;
+    border: 1px dashed $stop_disabled_border;
+    color: $stop_disabled_text;
 }
 
 /* Главное действие в очереди — выделено акцентом. */
 QPushButton#PrimaryButton {
-    background-color: #3b3670;
-    border: 1px solid #6c63ff;
-    color: #ffffff;
+    background-color: $primary_bg;
+    border: 1px solid $accent;
+    color: $bright_text;
     font-weight: 600;
 }
 
 QPushButton#PrimaryButton:hover {
-    background-color: #494290;
-    border-color: #8a83ff;
+    background-color: $primary_hover;
+    border-color: $accent_bright;
 }
 
 /* Убирающие/разрушительные действия — приглушены. */
 QPushButton#QuietButton {
-    background-color: #2a2b35;
-    border: 1px solid #3a3b48;
-    color: #a9abb8;
+    background-color: $quiet_bg;
+    border: 1px solid $border_subtle;
+    color: $muted_text;
 }
 
 QPushButton#QuietButton:hover {
-    background-color: #3a2f34;
-    border-color: #6c3a44;
-    color: #ffc9cf;
+    background-color: $quiet_hover_bg;
+    border-color: $danger_border;
+    color: $quiet_hover_text;
 }
 
 /* Пресеты Telegram/Twitch: выбранный остаётся подсвеченным. */
@@ -224,23 +415,23 @@ QPushButton#PresetButton {
 }
 
 QPushButton#PresetButton:checked {
-    background-color: #3a3d63;
-    border: 1px solid #8a83ff;
-    color: #ffffff;
+    background-color: $selected_bg;
+    border: 1px solid $accent_bright;
+    color: $bright_text;
     font-weight: 600;
 }
 
 QPushButton#PresetButton:checked:hover {
-    background-color: #464a76;
+    background-color: $selected_hover;
 }
 
 /* Подсказка к выбранному пресету — выноска с акцентной полосой слева,
    иначе строка текста висит в воздухе и выглядит инородно. */
 QLabel#HintCallout {
-    color: #c2c4d0;
+    color: $callout_text;
     font-size: 12px;
-    background: #2b2d3b;
-    border-left: 3px solid #6c63ff;
+    background: $callout_bg;
+    border-left: 3px solid $accent;
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
     padding: 9px 11px;
@@ -249,60 +440,60 @@ QLabel#HintCallout {
 /* Заголовок группы настроек. Подчёркнут линией во всю ширину: раньше это
    была просто мелкая серая строка, и она терялась среди самих настроек. */
 QLabel#GroupCaption {
-    color: #9ea2c8;
+    color: $caption_text;
     font-size: 10px;
     font-weight: 700;
     padding: 7px 0 3px 2px;
-    border-bottom: 1px solid #3c3f5c;
+    border-bottom: 1px solid $caption_line;
     margin-bottom: 3px;
 }
 
 /* Пояснение мелким шрифтом — отделено полосой сверху, а не просто
    брошено под кнопками. */
 QLabel#VersionLabel {
-    color: #55566a;
+    color: $disabled_text;
     font-size: 11px;
     padding: 0 6px 6px 0;
 }
 
 QLabel#NoteLabel {
-    color: #7e808c;
+    color: $note_text;
     font-size: 11px;
-    border-top: 1px solid #33343f;
+    border-top: 1px solid $note_line;
     padding: 8px 3px 0 3px;
 }
 
 /* Нижняя панель отделена линией: раньше блок сохранения сливался
    с кнопками очереди, стоящими прямо над ним. */
 QWidget#BottomPanel {
-    border-top: 1px solid #2f3040;
+    border-top: 1px solid $bottom_line;
 }
 
 QLabel#PreviewBox {
-    background-color: #202129;
-    border: 1px solid #45475f;
+    background-color: $sunken_bg;
+    border: 1px solid $card_border;
     border-radius: 8px;
-    color: #5f6070;
+    color: $faint_text;
     font-size: 11px;
 }
 
 QLineEdit#ReadOnlyPath {
-    background-color: #202129;
-    color: #a9abb8;
-    border: 1px solid #3a3b48;
+    background-color: $sunken_bg;
+    color: $muted_text;
+    border: 1px solid $border_subtle;
 }
 
 QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
-    background-color: #24252e;
-    border: 1px solid #3a3b48;
+    background-color: $surface;
+    border: 1px solid $border_subtle;
     border-radius: 6px;
     padding: 6px 8px;
-    color: #e6e6e6;
-    selection-background-color: #6c63ff;
+    color: $text;
+    selection-background-color: $accent;
 }
 
 QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover, QLineEdit:hover {
-    border: 1px solid #565a80;
+    border: 1px solid $hover_border;
 }
 
 /* Стрелка выпадающего списка: без неё поле неотличимо от обычного ввода. */
@@ -314,24 +505,24 @@ QComboBox::drop-down {
 }
 
 QComboBox::down-arrow {
-    image: url("__ARROW_DOWN__");
+    image: url("$arrow_down_icon");
     width: 10px;
     height: 7px;
     margin-right: 8px;
 }
 
 QComboBox::down-arrow:disabled {
-    image: url("__ARROW_DOWN_OFF__");
+    image: url("$arrow_down_off_icon");
 }
 
 /* Выпадающий список: своя карточка со скруглением и «воздухом» вокруг
    пунктов. По умолчанию Qt рисует плоский прямоугольник впритык к тексту,
    и на тёмной теме он выглядит инородно рядом со скруглёнными полями. */
 QComboBox QAbstractItemView {
-    background-color: #272834;
-    border: 1px solid #45475f;
+    background-color: $popup_bg;
+    border: 1px solid $card_border;
     border-radius: 8px;
-    selection-background-color: #3a3d63;
+    selection-background-color: $selected_bg;
     outline: none;
     padding: 5px;
 }
@@ -344,12 +535,12 @@ QComboBox QAbstractItemView::item {
 }
 
 QComboBox QAbstractItemView::item:hover {
-    background-color: #32344a;
+    background-color: $popup_hover;
 }
 
 QComboBox QAbstractItemView::item:selected {
-    background-color: #4a4d7a;
-    color: #ffffff;
+    background-color: $popup_selected;
+    color: $bright_text;
 }
 
 /* Заголовок группы форматов: не выбирается, поэтому и выглядит как
@@ -367,8 +558,8 @@ QComboBox QAbstractItemView::item:disabled {
 QSpinBox::up-button, QDoubleSpinBox::up-button {
     subcontrol-origin: border;
     subcontrol-position: top right;
-    background-color: #2c2e3a;
-    border-left: 1px solid #3a3b48;
+    background-color: $hover_bg;
+    border-left: 1px solid $border_subtle;
     border-top-right-radius: 6px;
     width: 18px;
 }
@@ -376,40 +567,40 @@ QSpinBox::up-button, QDoubleSpinBox::up-button {
 QSpinBox::down-button, QDoubleSpinBox::down-button {
     subcontrol-origin: border;
     subcontrol-position: bottom right;
-    background-color: #2c2e3a;
-    border-left: 1px solid #3a3b48;
+    background-color: $hover_bg;
+    border-left: 1px solid $border_subtle;
     border-bottom-right-radius: 6px;
     width: 18px;
 }
 
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-    background-color: #3d4060;
+    background-color: $button_hover_bg;
 }
 
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-    image: url("__ARROW_UP__");
+    image: url("$arrow_up_icon");
     width: 9px;
     height: 6px;
 }
 
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-    image: url("__ARROW_DOWN__");
+    image: url("$arrow_down_icon");
     width: 9px;
     height: 6px;
 }
 
 QSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:disabled {
-    image: url("__ARROW_UP_OFF__");
+    image: url("$arrow_up_off_icon");
 }
 
 QSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:disabled {
-    image: url("__ARROW_DOWN_OFF__");
+    image: url("$arrow_down_off_icon");
 }
 
 QCheckBox {
     spacing: 8px;
-    color: #d7d8e0;
+    color: $check_text;
     background: transparent;
 }
 
@@ -417,26 +608,26 @@ QCheckBox::indicator {
     width: 16px;
     height: 16px;
     border-radius: 4px;
-    border: 1px solid #4a4c60;
-    background-color: #24252e;
+    border: 1px solid $check_border;
+    background-color: $surface;
 }
 
 QCheckBox::indicator:checked {
-    background-color: #6c63ff;
-    border: 1px solid #7a72ff;
+    background-color: $accent;
+    border: 1px solid $accent_hover;
 }
 
 QProgressBar {
-    background-color: #24252e;
-    border: 1px solid #45475f;
+    background-color: $surface;
+    border: 1px solid $card_border;
     border-radius: 6px;
     text-align: center;
-    color: #e6e6e6;
+    color: $text;
     height: 20px;
 }
 
 QProgressBar::chunk {
-    background-color: #6c63ff;
+    background-color: $accent;
     border-radius: 5px;
 }
 
@@ -445,7 +636,7 @@ QProgressBar::chunk {
    Qt всё равно заливает полосу цветом из палитры окна, и в углах
    панелей просвечивал фон приложения. */
 QScrollBar:vertical {
-    background: #24252e;
+    background: $surface;
     width: 12px;
     /* Без отступов: в них Qt рисует фон окна, и по краям панели
        оставались светлые просветы. Воздух даёт padding у ползунка. */
@@ -454,20 +645,20 @@ QScrollBar:vertical {
 }
 
 QScrollBar:horizontal {
-    background: #24252e;
+    background: $surface;
     height: 12px;
     margin: 0;
     padding: 2px 3px;
 }
 
 QScrollBar::handle:horizontal {
-    background: #3a3b48;
+    background: $border_subtle;
     border-radius: 4px;
     min-width: 24px;
 }
 
 QScrollBar::handle:horizontal:hover {
-    background: #4a4c60;
+    background: $check_border;
 }
 
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
@@ -475,17 +666,17 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
 }
 
 QScrollBar::add-page, QScrollBar::sub-page {
-    background: #24252e;
+    background: $surface;
 }
 
 QScrollBar::handle:vertical {
-    background: #3a3b48;
+    background: $border_subtle;
     border-radius: 4px;
     min-height: 24px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #4a4c60;
+    background: $check_border;
 }
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
@@ -493,31 +684,51 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 
 QSplitter::handle:horizontal {
-    background-color: #1e1f26;
+    background-color: $window_bg;
     width: 14px;
     /* Тонкая полоска-указатель по центру зазора между панелями. */
     image: none;
-    border-left: 6px solid #1e1f26;
-    border-right: 6px solid #1e1f26;
+    border-left: 6px solid $window_bg;
+    border-right: 6px solid $window_bg;
 }
 
 QSplitter::handle:horizontal:hover {
-    border-left-color: #2c2e3a;
-    border-right-color: #2c2e3a;
-    background-color: #45475f;
+    border-left-color: $hover_bg;
+    border-right-color: $hover_bg;
+    background-color: $card_border;
 }
 
 QMessageBox {
-    background-color: #24252e;
+    background-color: $surface;
 }
 
 QToolTip {
-    background-color: #2c2e3a;
-    color: #e6e6e6;
-    border: 1px solid #45475f;
+    background-color: $hover_bg;
+    color: $text;
+    border: 1px solid $card_border;
     padding: 4px;
 }
-"""
+
+/* Ссылка на новую версию рядом с номером версии: заметная, но не кричащая. */
+QPushButton#UpdateButton {
+    background: transparent;
+    border: none;
+    color: $accent_bright;
+    padding: 0 4px 6px 4px;
+    font-size: 11px;
+    text-decoration: underline;
+}
+
+QPushButton#UpdateButton:hover {
+    color: $bright_text;
+}
+
+/* Предупреждение об отсутствии FFmpeg над очередью. */
+QLabel#WarningLabel {
+    color: $warning_text;
+    font-weight: 600;
+}
+""")
 
 
 def _draw_arrow(path, color, pointing_down):
@@ -551,30 +762,74 @@ def _draw_arrow(path, color, pointing_down):
     pixmap.save(path, "PNG")
 
 
-def build_stylesheet():
-    """Готовит таблицу стилей с уже сгенерированными иконками стрелок."""
-    assets_dir = os.path.join(tempfile.gettempdir(), "media_converter_studio_assets")
+# Иконки рисуются один раз на процесс: темы переключаются на каждой смене
+# вкладки, и перерисовывать PNG при этом незачем.
+_arrow_icons = None
+
+
+def _arrow_icon_paths(colors):
+    global _arrow_icons
+    if _arrow_icons is not None:
+        return _arrow_icons
+    assets_dir = os.path.join(tempfile.gettempdir(), "dttconvert_assets")
     os.makedirs(assets_dir, exist_ok=True)
-
     icons = {
-        "__ARROW_DOWN__": ("arrow_down.png", "#b9bbc9", True),
-        "__ARROW_UP__": ("arrow_up.png", "#b9bbc9", False),
-        "__ARROW_DOWN_OFF__": ("arrow_down_off.png", "#5f6070", True),
-        "__ARROW_UP_OFF__": ("arrow_up_off.png", "#5f6070", False),
+        "arrow_down_icon": ("arrow_down.png", colors["arrow"], True),
+        "arrow_up_icon": ("arrow_up.png", colors["arrow"], False),
+        "arrow_down_off_icon": ("arrow_down_off.png", colors["arrow_off"], True),
+        "arrow_up_off_icon": ("arrow_up_off.png", colors["arrow_off"], False),
     }
-
-    stylesheet = _STYLESHEET_TEMPLATE
-    for placeholder, (file_name, color, pointing_down) in icons.items():
+    paths = {}
+    for key, (file_name, color, pointing_down) in icons.items():
         icon_path = os.path.join(assets_dir, file_name)
         try:
             _draw_arrow(icon_path, color, pointing_down)
         except Exception:
             # Без иконок Qt нарисует стрелки сам — интерфейс не сломается.
+            paths[key] = ""
             continue
         # В QSS путь всегда через прямые слэши, даже на Windows.
-        stylesheet = stylesheet.replace(placeholder, icon_path.replace("\\", "/"))
+        paths[key] = icon_path.replace("\\", "/")
+    _arrow_icons = paths
+    return paths
+
+
+_stylesheets = {}
+
+
+def build_stylesheet(theme=THEME_MAIN):
+    """Таблица стилей темы с уже сгенерированными иконками стрелок.
+
+    Результат кэшируется: тема площадки ставится при каждом переключении
+    вкладки, и собирать строку заново незачем.
+    """
+    cached = _stylesheets.get(theme)
+    if cached is not None:
+        return cached
+    colors = palette(theme)
+    values = dict(colors)
+    values.update(_arrow_icon_paths(colors))
+    stylesheet = _STYLESHEET_TEMPLATE.substitute(values)
+    _stylesheets[theme] = stylesheet
     return stylesheet
 
 
-# Совместимость: часть кода ожидает готовую строку стилей.
-DARK_STYLESHEET = _STYLESHEET_TEMPLATE
+def theme_for_tab(index):
+    """Какая тема у вкладки настроек: порядок как у кнопок вкладок."""
+    return THEMES[index] if 0 <= index < len(THEMES) else THEME_MAIN
+
+
+def _relative_luminance(color):
+    channels = []
+    for i in (1, 3, 5):
+        value = int(color[i:i + 2], 16) / 255.0
+        channels.append(value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4)
+    red, green, blue = channels
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast_ratio(first, second):
+    """Контраст двух цветов по WCAG: 1 — неразличимы, 21 — чёрное на белом."""
+    lighter, darker = sorted((_relative_luminance(first), _relative_luminance(second)),
+                             reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)

@@ -27,6 +27,13 @@ from discord_utils import (
     is_discord_animated_format,
     is_discord_format,
 )
+from errors import (
+    LocalizedFileNotFoundError,
+    LocalizedRuntimeError,
+    LocalizedValueError,
+    as_message,
+)
+from format_names import FormatLabel
 from image_utils import ImageProcessor
 from telegram_utils import (
     TG_ALL_FORMATS,
@@ -34,7 +41,26 @@ from telegram_utils import (
     is_telegram_video_format,
     static_image_extension,
 )
-from twitch_utils import is_twitch_animated_format, is_twitch_format, twitch_sizes
+from twitch_utils import (
+    KIND_AUTO_GIF,
+    KIND_AUTO_WEBP,
+    KIND_GIF,
+    is_twitch_animated_format,
+    is_twitch_auto_format,
+    is_twitch_format,
+    twitch_preset,
+)
+from whatsapp_utils import (
+    MAX_ANIMATION_FPS as WHATSAPP_MAX_FPS,
+    MAX_ANIMATION_SEC as WHATSAPP_MAX_SEC,
+    WHATSAPP_ALL_FORMATS,
+    is_whatsapp_animated_format,
+    is_whatsapp_format,
+    whatsapp_byte_limit,
+    whatsapp_extension,
+    whatsapp_size,
+    whatsapp_suffix,
+)
 
 IMAGE_FORMATS = {"jpg", "jpeg", "png", "webp", "bmp", "avif"}
 VIDEO_FORMATS = {"mp4", "webm", "avi"}
@@ -45,12 +71,15 @@ ANIMATION_FORMATS = {"gif", "apng"}
 FRAMES_FORMAT = {"frames"}
 TELEGRAM_FORMATS = TG_ALL_FORMATS
 DISCORD_FORMATS = DISCORD_ALL_FORMATS
+WHATSAPP_FORMATS = WHATSAPP_ALL_FORMATS
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".apng", ".webp", ".bmp", ".avif",
-              ".heic", ".heif"}
-# .mov встречается только как внутренний промежуточный файл: в нём хранится
-# распакованная анимация без потерь, см. _process_animated_image_job.
-VIDEO_EXTS = {".mp4", ".webm", ".avi", ".mov"}
+              ".heic", ".heif", ".tif", ".tiff"}
+# Видео на входе: FFmpeg читает все эти контейнеры. .mov пишут iPhone и
+# заодно им пользуется сама программа как промежуточным файлом без потерь
+# (см. _process_animated_image_job), .mkv — запись OBS.
+VIDEO_EXTS = {".mp4", ".webm", ".avi", ".mov", ".mkv", ".m4v", ".wmv",
+              ".flv", ".mpg", ".mpeg", ".3gp", ".ogv"}
 GIF_EXT = ".gif"
 ANIMATED_WEBP_EXT = ".awebp"
 # Форматы, которые бывают и статичными, и анимированными: тип определяется
@@ -144,9 +173,13 @@ def is_static_target(output_format):
     if fmt in TELEGRAM_FORMATS:
         return not is_telegram_video_format(fmt)
     if is_twitch_format(fmt):
-        return not is_twitch_animated_format(fmt)
+        # 7TV и BTTV анимируют то, что анимировано в исходнике, поэтому
+        # анимированной картинке нужна вся анимация, а не один кадр.
+        return not (is_twitch_animated_format(fmt) or is_twitch_auto_format(fmt))
     if is_discord_format(fmt):
         return not is_discord_animated_format(fmt)
+    if is_whatsapp_format(fmt):
+        return not is_whatsapp_animated_format(fmt)
     return False
 
 
@@ -241,7 +274,9 @@ def default_worker_count(jobs):
 class ConversionWorker(QThread):
     file_started = pyqtSignal(int)
     progress_updated = pyqtSignal(int, int)
-    file_finished = pyqtSignal(int, bool, str)
+    # Сообщение — строка или errors.LocalizedError: текст ошибки переводится
+    # в момент показа, а не здесь, в потоке обработки.
+    file_finished = pyqtSignal(int, bool, object)
     # Файл, который прервали на середине. Отдельный сигнал, а не ошибка:
     # без него строка навсегда оставалась в состоянии «Обработка».
     file_cancelled = pyqtSignal(int)
@@ -317,7 +352,7 @@ class ConversionWorker(QThread):
             self.file_cancelled.emit(index)
         except Exception as exc:
             _log.exception("Ошибка обработки %s", job.input_path)
-            message = str(exc) or type(exc).__name__
+            message = as_message(exc)
             self._record(index, job, "Ошибка", time.monotonic() - started_at, message)
             self.file_finished.emit(index, False, message)
         else:
@@ -332,7 +367,8 @@ class ConversionWorker(QThread):
                 "output_format": job.settings.output_format,
                 "status": status,
                 "elapsed_sec": round(elapsed, 2),
-                "message": message.splitlines()[0] if message else "",
+                # Ошибку храним целиком: отчёт переводится при записи в CSV.
+                "message": message,
             })
 
     def _emit_progress(self, index, percent):
@@ -363,8 +399,8 @@ class ConversionWorker(QThread):
         category = get_category(input_path)
 
         if not os.path.isfile(input_path):
-            raise FileNotFoundError(
-                f"Исходный файл не найден: {os.path.basename(input_path)}"
+            raise LocalizedFileNotFoundError(
+                "err_source_missing", name=os.path.basename(job.protect_path)
             )
 
         os.makedirs(output_dir, exist_ok=True)
@@ -375,10 +411,7 @@ class ConversionWorker(QThread):
         # промежуточный файл, и только потом FFmpeg падал с невнятной
         # простынёй о том, что дорожки нет.
         if output_format in AUDIO_FORMATS and category != "video":
-            raise ValueError(
-                "Звук можно извлечь только из видео: у изображений, GIF "
-                "и анимированных картинок звуковой дорожки нет."
-            )
+            raise LocalizedValueError("err_audio_from_non_video")
 
         if category == "animated_image":
             self._process_animated_image_job(index, job, base_name, ffmpeg)
@@ -402,9 +435,15 @@ class ConversionWorker(QThread):
             )
             return
 
+        if is_whatsapp_format(output_format):
+            self._process_whatsapp_job(
+                index, job, base_name, category, output_format, ffmpeg
+            )
+            return
+
         if output_format in AUDIO_FORMATS:
             if ffmpeg is None:
-                raise RuntimeError("FFmpeg не найден, извлечение звука невозможно.")
+                raise LocalizedRuntimeError("err_no_ffmpeg")
             output_path = resolve_output_path(
                 output_dir, base_name, output_format, overwrite, protect
             )
@@ -416,11 +455,9 @@ class ConversionWorker(QThread):
 
         if output_format in FRAMES_FORMAT:
             if category not in ("video", "gif", "animated_image"):
-                raise ValueError(
-                    "Извлечение кадров доступно только для видео и GIF файлов."
-                )
+                raise LocalizedValueError("err_frames_need_motion")
             if ffmpeg is None:
-                raise RuntimeError("FFmpeg недоступен, извлечение кадров невозможно.")
+                raise LocalizedRuntimeError("err_no_ffmpeg")
             frames_dir = resolve_frames_dir(output_dir, base_name, overwrite)
             ffmpeg.extract_frames(
                 input_path, frames_dir, width, height, keep_aspect, fps, trim,
@@ -431,10 +468,7 @@ class ConversionWorker(QThread):
 
         if category == "image":
             if output_format not in IMAGE_FORMATS:
-                raise ValueError(
-                    "Статичное изображение можно конвертировать только "
-                    "в JPG, PNG, WEBP, BMP или AVIF."
-                )
+                raise LocalizedValueError("err_static_image_target")
             output_path = resolve_output_path(output_dir, base_name, output_format, overwrite, protect)
             self._emit_progress(index, 10)
             ImageProcessor.convert_image(
@@ -446,7 +480,7 @@ class ConversionWorker(QThread):
             return
 
         if ffmpeg is None:
-            raise RuntimeError("FFmpeg не найден в системе, обработка видео/GIF невозможна.")
+            raise LocalizedRuntimeError("err_no_ffmpeg")
 
         if category in ("gif", "animated_image"):
             if output_format in ANIMATION_FORMATS:
@@ -469,7 +503,7 @@ class ConversionWorker(QThread):
                     trim=trim, transform=transform,
                 )
             else:
-                raise ValueError(f"Неизвестный выходной формат: {output_format}")
+                raise LocalizedValueError("err_unknown_format", fmt=output_format)
             return
 
         if category == "video":
@@ -495,10 +529,12 @@ class ConversionWorker(QThread):
                     trim=trim, transform=transform,
                 )
             else:
-                raise ValueError(f"Неизвестный выходной формат: {output_format}")
+                raise LocalizedValueError("err_unknown_format", fmt=output_format)
             return
 
-        raise ValueError(f"Неподдерживаемый тип файла: {input_path}")
+        raise LocalizedValueError(
+            "err_unsupported_input", name=os.path.basename(job.protect_path)
+        )
 
     def _process_animation_job(self, index, job, base_name, output_format,
                                ffmpeg, transform):
@@ -547,9 +583,7 @@ class ConversionWorker(QThread):
             return
 
         if ffmpeg is None:
-            raise RuntimeError(
-                "FFmpeg не найден: анимированную картинку обработать невозможно."
-            )
+            raise LocalizedRuntimeError("err_no_ffmpeg")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             frames_dir = os.path.join(tmp_dir, "frames")
@@ -579,12 +613,11 @@ class ConversionWorker(QThread):
 
         if is_telegram_video_format(output_format):
             if category not in ("video", "gif", "animated_image"):
-                raise ValueError(
-                    "Telegram WEBM доступен только для видео и GIF. "
-                    "Для изображений выберите TG Стикер/Emoji (PNG или WEBP)."
+                raise LocalizedValueError(
+                    "err_needs_motion", target=FormatLabel(output_format)
                 )
             if ffmpeg is None:
-                raise RuntimeError("FFmpeg не найден, конвертация в Telegram WEBM невозможна.")
+                raise LocalizedRuntimeError("err_no_ffmpeg")
             target = "emoji" if is_telegram_emoji_format(output_format) else "sticker"
             suffix = "_tg_emoji" if target == "emoji" else "_tg_sticker"
             output_path = resolve_output_path(
@@ -598,11 +631,14 @@ class ConversionWorker(QThread):
                 start_time=settings.tg_start,
                 progress_callback=lambda p: self._emit_progress(index, p),
                 transform=transform,
+                fill=settings.fill_square,
             )
             return
 
         if category not in ("image", "video", "gif", "animated_image"):
-            raise ValueError("Telegram PNG/WEBP доступны для изображений, видео и GIF.")
+            raise LocalizedValueError(
+                "err_unsupported_input", name=os.path.basename(job.protect_path)
+            )
 
         ext = static_image_extension(output_format)
         suffix = "_tg_emoji" if is_telegram_emoji_format(output_format) else "_tg_sticker"
@@ -613,13 +649,14 @@ class ConversionWorker(QThread):
         if category == "image":
             self._emit_progress(index, 10)
             ImageProcessor.convert_telegram_static(
-                input_path, output_path, output_format, transform
+                input_path, output_path, output_format, transform,
+                fill=settings.fill_square,
             )
             self._emit_progress(index, 100)
             return
 
         if ffmpeg is None:
-            raise RuntimeError("FFmpeg не найден, извлечение кадра невозможно.")
+            raise LocalizedRuntimeError("err_no_ffmpeg")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             frame_path = os.path.join(tmp_dir, "frame.png")
@@ -635,64 +672,136 @@ class ConversionWorker(QThread):
                 trim=(settings.tg_start, 0) if settings.tg_start else None,
             )
             ImageProcessor.convert_telegram_static(
-                frame_path, output_path, output_format, transform
+                frame_path, output_path, output_format, transform,
+                fill=settings.fill_square,
             )
         self._emit_progress(index, 100)
 
     def _process_twitch_job(self, index, job, base_name, category, output_format, ffmpeg):
+        """Вкладка Twitch: смайлики, значки, иконки баллов, 7TV и BTTV.
+
+        Всё это квадраты одного или нескольких размеров под лимит веса;
+        отличаются размеры, лимиты и то, анимирован ли результат.
+        """
         settings = job.settings
         input_path = job.input_path
-        output_dir = job.output_dir
-        overwrite = job.overwrite
-        protect = job.protect_path
         transform = transform_for(settings)
         trim = settings.effective_trim
+        fill = settings.fill_square
+        preset = twitch_preset(output_format)
+        moving = category in ("video", "gif", "animated_image")
 
-        animated = is_twitch_animated_format(output_format)
-        if animated and category not in ("video", "gif", "animated_image"):
-            raise ValueError("Анимированный GIF Twitch доступен только для GIF и видео.")
-        if animated and ffmpeg is None:
-            raise RuntimeError("FFmpeg не найден: GIF для Twitch создать невозможно.")
+        if preset.kind == KIND_GIF:
+            animation = "gif"
+        elif preset.kind == KIND_AUTO_GIF:
+            animation = "gif" if moving else None
+        elif preset.kind == KIND_AUTO_WEBP:
+            animation = "webp" if moving else None
+        else:
+            animation = None
 
-        sizes = twitch_sizes(output_format)
+        if preset.kind == KIND_GIF and not moving:
+            raise LocalizedValueError("err_needs_motion", target=FormatLabel(output_format))
+        if (animation or moving) and ffmpeg is None:
+            raise LocalizedRuntimeError("err_no_ffmpeg")
+
+        report = lambda percent: self._emit_progress(index, percent)
+        # Старший размер — первым: частота кадров, подобранная для него,
+        # подходит и младшим (ролик тот же, файл легче), и вместо полного
+        # подбора на каждый размер хватает одной попытки. Заодно все файлы
+        # комплекта анимируются одинаково.
+        sizes = sorted(preset.sizes, reverse=True)
         # Прогресс делим между размерами комплекта, иначе полоса откатывается назад.
         share = 100.0 / len(sizes)
-        for position, size in enumerate(sizes):
-            self._check_cancelled()
-            offset = int(position * share)
-            suffix = f"_twitch_{size}"
-            if animated:
+        fps_hint = None
+        frame_path = None
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for position, size in enumerate(sizes):
+                self._check_cancelled()
+                offset = int(position * share)
+                part = scaled_progress(report, offset, share / 100.0)
+                name = f"{base_name}{preset.suffix.format(size=size)}"
+                extension = {"gif": "gif", "webp": "webp"}.get(animation, "png")
                 output_path = resolve_output_path(
-                    output_dir, f"{base_name}{suffix}", "gif", overwrite, protect
+                    job.output_dir, name, extension, job.overwrite, job.protect_path
                 )
-                ffmpeg.convert_twitch_gif(
-                    input_path, output_path, size,
-                    progress_callback=scaled_progress(
-                        lambda p: self._emit_progress(index, p), offset, share / 100.0
-                    ),
-                    trim=trim, transform=transform,
-                )
-                continue
+                if animation == "gif":
+                    fps_hint = ffmpeg.convert_square_gif(
+                        input_path, output_path, size, preset.max_bytes,
+                        max_frames=preset.max_frames, fps_cap=preset.fps_cap,
+                        trim=trim, transform=transform, fill=fill,
+                        fps_hint=fps_hint, progress_callback=part,
+                    )
+                    continue
+                if animation == "webp":
+                    ffmpeg.convert_animated_webp(
+                        input_path, output_path, size, preset.max_bytes,
+                        fps_cap=preset.fps_cap, max_frames=preset.max_frames,
+                        trim=trim, transform=transform, fill=fill,
+                        progress_callback=part,
+                    )
+                    continue
 
-            output_path = resolve_output_path(
-                output_dir, f"{base_name}{suffix}", "png", overwrite, protect
-            )
-            if category == "image":
+                source = input_path
+                if category != "image":
+                    # Кадр из видео достаём один раз на весь комплект.
+                    if frame_path is None:
+                        frame_path = os.path.join(tmp_dir, "frame.png")
+                        ffmpeg.extract_single_frame(
+                            input_path, frame_path, 0, 0, True, trim=trim
+                        )
+                    source = frame_path
                 ImageProcessor.convert_twitch_static(
-                    input_path, output_path, size, transform
+                    source, output_path, size, transform, fill=fill,
+                    limit_bytes=preset.max_bytes,
                 )
-            else:
-                if ffmpeg is None:
-                    raise RuntimeError("FFmpeg не найден: кадр для Twitch извлечь невозможно.")
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    frame_path = os.path.join(tmp_dir, "frame.png")
-                    ffmpeg.extract_single_frame(
-                        input_path, frame_path, 0, 0, True, trim=trim
-                    )
-                    ImageProcessor.convert_twitch_static(
-                        frame_path, output_path, size, transform
-                    )
-            self._emit_progress(index, offset + int(share))
+                self._emit_progress(index, offset + int(share))
+        self._emit_progress(index, 100)
+
+    def _process_whatsapp_job(self, index, job, base_name, category, output_format,
+                              ffmpeg):
+        """Стикер WhatsApp (статичный или анимированный) и иконка набора."""
+        settings = job.settings
+        transform = transform_for(settings)
+        trim = settings.effective_trim
+        fill = settings.fill_square
+        size = whatsapp_size(output_format)
+        limit = whatsapp_byte_limit(output_format)
+        animated = is_whatsapp_animated_format(output_format)
+        moving = category in ("video", "gif", "animated_image")
+
+        if animated and not moving:
+            raise LocalizedValueError("err_needs_motion", target=FormatLabel(output_format))
+        if moving and ffmpeg is None:
+            raise LocalizedRuntimeError("err_no_ffmpeg")
+
+        output_path = resolve_output_path(
+            job.output_dir, f"{base_name}{whatsapp_suffix(output_format)}",
+            whatsapp_extension(output_format), job.overwrite, job.protect_path,
+        )
+        report = lambda percent: self._emit_progress(index, percent)
+
+        if animated:
+            ffmpeg.convert_animated_webp(
+                job.input_path, output_path, size, limit,
+                fps_cap=WHATSAPP_MAX_FPS, max_duration=WHATSAPP_MAX_SEC,
+                trim=trim, transform=transform, fill=fill, progress_callback=report,
+            )
+            return
+
+        pil_format = "PNG" if whatsapp_extension(output_format) == "png" else "WEBP"
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            source = job.input_path
+            if category != "image":
+                source = os.path.join(tmp_dir, "frame.png")
+                ffmpeg.extract_single_frame(
+                    job.input_path, source, 0, 0, True,
+                    progress_callback=scaled_progress(report, 0, 0.5), trim=trim,
+                )
+            self._emit_progress(index, 60)
+            ImageProcessor.convert_square_static(
+                source, output_path, size, limit, transform, fill, pil_format
+            )
         self._emit_progress(index, 100)
 
     def _process_discord_job(self, index, job, base_name, category, output_format, ffmpeg):
@@ -711,12 +820,11 @@ class ConversionWorker(QThread):
         animated = is_discord_animated_format(output_format)
 
         if animated and category not in ("video", "gif", "animated_image"):
-            raise ValueError(
-                "Анимированный стикер и эмодзи Discord доступны только "
-                "для видео, GIF и анимированных картинок."
+            raise LocalizedValueError(
+                "err_needs_motion", target=FormatLabel(output_format)
             )
         if animated and ffmpeg is None:
-            raise RuntimeError("FFmpeg не найден: анимацию для Discord создать невозможно.")
+            raise LocalizedRuntimeError("err_no_ffmpeg")
 
         output_path = resolve_output_path(
             output_dir, f"{base_name}{suffix}", extension, overwrite, protect
@@ -727,12 +835,13 @@ class ConversionWorker(QThread):
             if category == "image":
                 self._emit_progress(index, 10)
                 ImageProcessor.convert_discord_static(
-                    input_path, output_path, size, limit, transform
+                    input_path, output_path, size, limit, transform,
+                    fill=settings.fill_square,
                 )
                 self._emit_progress(index, 100)
                 return
             if ffmpeg is None:
-                raise RuntimeError("FFmpeg не найден: кадр для Discord извлечь невозможно.")
+                raise LocalizedRuntimeError("err_no_ffmpeg")
             with tempfile.TemporaryDirectory() as tmp_dir:
                 frame_path = os.path.join(tmp_dir, "frame.png")
                 ffmpeg.extract_single_frame(
@@ -741,7 +850,8 @@ class ConversionWorker(QThread):
                     trim=trim,
                 )
                 ImageProcessor.convert_discord_static(
-                    frame_path, output_path, size, limit, transform
+                    frame_path, output_path, size, limit, transform,
+                    fill=settings.fill_square,
                 )
             self._emit_progress(index, 100)
             return
@@ -751,10 +861,12 @@ class ConversionWorker(QThread):
                 input_path, output_path, size, limit,
                 max_duration=MAX_STICKER_DURATION_SEC, fps_cap=DISCORD_MAX_FPS,
                 trim=trim, transform=transform, progress_callback=report,
+                fill=settings.fill_square,
             )
             return
 
         ffmpeg.convert_discord_gif(
             input_path, output_path, size, limit, fps_cap=DISCORD_MAX_FPS,
             trim=trim, transform=transform, progress_callback=report,
+            fill=settings.fill_square,
         )

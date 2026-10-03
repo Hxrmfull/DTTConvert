@@ -1,3 +1,4 @@
+import math
 import os
 import queue
 import re
@@ -8,6 +9,7 @@ import tempfile
 import threading
 from dataclasses import dataclass
 
+from errors import LocalizedRuntimeError, LocalizedValueError
 from telegram_utils import (
     MAX_VIDEO_DURATION_SEC,
     MAX_VIDEO_FPS,
@@ -15,7 +17,7 @@ from telegram_utils import (
     build_telegram_video_filter,
     validate_webm_file,
 )
-from twitch_utils import TWITCH_MAX_FRAMES, TWITCH_MAX_GIF_BYTES
+from twitch_utils import TWITCH_FPS_CAP, TWITCH_MAX_FRAMES, TWITCH_MAX_GIF_BYTES
 
 # Если FFmpeg не выдал ни строки вывода за это время, считаем его зависшим.
 FFMPEG_STALL_TIMEOUT_SEC = 300
@@ -42,11 +44,37 @@ AUDIO_CODECS = {
     ".wav": "pcm_s16le",
 }
 
+# Ступени качества анимированного WEBP: сначала подбирается частота кадров,
+# а если файл не влезает и при одном кадре в секунду — качество ниже.
+WEBP_QUALITY_STEPS = (75, 55, 35)
+
+# На сколько единиц CRF у VP9 вес файла падает примерно вдвое. Нужна только
+# для первой догадки при подборе Telegram WEBM: точный ответ всё равно
+# находит деление пополам.
+CRF_PER_HALVING = 7
+
 # Ниже этого битрейта видео превращается в кашу — целевой размер недостижим.
 MIN_VIDEO_BITRATE = 32_000
 
+# Сколько памяти можно отдать кадрам, чтобы собрать GIF за один запуск
+# FFmpeg (см. _generate_gif_via_palette). Смайлики и стикеры укладываются
+# с огромным запасом, длинное видео в полном размере — нет.
+SINGLE_PASS_GIF_MEMORY = 384 * 1024 * 1024
 
-class FFmpegNotFoundError(Exception):
+
+def frames_memory(width, height, fps, duration):
+    """Сколько байт займут кадры фрагмента в памяти (RGBA, с запасом).
+
+    None, если чего-то не хватает для оценки: тогда безопаснее считать,
+    что кадры не поместятся.
+    """
+    if not (width and height and fps and duration):
+        return None
+    frames = int(float(fps) * float(duration)) + 1
+    return int(width) * int(height) * 4 * frames
+
+
+class FFmpegNotFoundError(LocalizedRuntimeError):
     pass
 
 
@@ -194,10 +222,7 @@ class FFmpegProcessor:
     def __init__(self):
         available, ffmpeg_path, ffprobe_path = check_ffmpeg_available()
         if not available:
-            raise FFmpegNotFoundError(
-                "FFmpeg или FFprobe не найдены в системе. "
-                "Установите FFmpeg и убедитесь, что он добавлен в PATH."
-            )
+            raise FFmpegNotFoundError("err_no_ffmpeg")
         self.ffmpeg_path = ffmpeg_path
         self.ffprobe_path = ffprobe_path
         self._process_lock = threading.Lock()
@@ -394,13 +419,14 @@ class FFmpegProcessor:
         if self.cancelled:
             raise ConversionCancelled("Обработка остановлена пользователем.")
         if stalled:
-            raise RuntimeError(
-                f"FFmpeg не отвечает более {FFMPEG_STALL_TIMEOUT_SEC // 60} мин и был остановлен. "
-                "Возможно, файл повреждён или использует неподдерживаемый кодек."
+            raise LocalizedRuntimeError(
+                "err_ffmpeg_stalled", minutes=FFMPEG_STALL_TIMEOUT_SEC // 60
             )
         if return_code != 0:
             tail = "".join(output_lines[-40:])
-            raise RuntimeError(f"FFmpeg завершился с ошибкой (код {return_code}):\n{tail}")
+            raise LocalizedRuntimeError(
+                "err_ffmpeg_failed", detail=tail.rstrip(), code=return_code
+            )
 
     def _base_cmd(self, input_path, trim=None):
         """Начало команды FFmpeg. trim — пара (начало, длительность) в секундах.
@@ -448,7 +474,7 @@ class FFmpegProcessor:
         }
         args = codecs.get(ext)
         if args is None:
-            raise ValueError(f"Неподдерживаемый видео формат: {ext}")
+            raise LocalizedValueError("err_unknown_format", fmt=ext)
         args = list(args)
 
         if bitrate:
@@ -488,9 +514,33 @@ class FFmpegProcessor:
 
     def _generate_gif_via_palette(
         self, input_path, output_path, vf, duration, palette_filter, paletteuse_filter,
-        progress_callback=None, trim=None
+        progress_callback=None, trim=None, buffered_bytes=None
     ):
-        """Двухпроходная генерация GIF: сначала строится палитра цветов, затем сам GIF."""
+        """GIF через палитру: сначала строится палитра цветов, затем сам GIF.
+
+        buffered_bytes — сколько памяти займут все кадры фрагмента после
+        фильтров. Если они помещаются в SINGLE_PASS_GIF_MEMORY, всё делается
+        одним запуском FFmpeg: кадры декодируются и масштабируются один раз,
+        а split держит их в памяти, пока строится палитра. На длинном видео
+        так делать нельзя — кадры заняли бы гигабайты, — и тогда остаётся
+        прежняя схема в два прохода.
+        """
+        if buffered_bytes is not None and buffered_bytes <= SINGLE_PASS_GIF_MEMORY:
+            cmd = [self.ffmpeg_path, "-y"]
+            start, length = trim or (0, 0)
+            if start:
+                cmd += ["-ss", f"{float(start):.3f}"]
+            # Длительность — у входа: вход здесь один, и палитра строится
+            # только по нужному фрагменту, а не по всему файлу.
+            if length:
+                cmd += ["-t", f"{float(length):.3f}"]
+            cmd += ["-i", input_path]
+            cmd += ["-lavfi",
+                    f"{vf},split[a][b];[a]{palette_filter}[p];[b][p]{paletteuse_filter}"]
+            cmd += ["-progress", "pipe:1", "-nostats", output_path]
+            self._run_with_progress(cmd, duration, progress_callback)
+            return
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             palette_path = os.path.join(tmp_dir, "palette.png")
             palette_cmd = self._base_cmd(input_path, trim)
@@ -539,11 +589,7 @@ class FFmpegProcessor:
                 0 if drop_audio else (audio_bitrate or 160),
             )
             if bitrate is None:
-                raise ValueError(
-                    f"Целевой размер {target_bytes // 1024} КБ слишком мал для "
-                    "этого файла. Увеличьте размер, обрежьте по времени или "
-                    "уменьшите разрешение."
-                )
+                raise LocalizedValueError("err_target_too_small", kb=target_bytes // 1024)
 
         # Битрейт — оценка сверху, и на сложном материале файл выходит крупнее.
         # Одна повторная попытка с поправкой надёжнее, чем обещать точный размер.
@@ -575,19 +621,44 @@ class FFmpegProcessor:
         if progress_callback:
             progress_callback(100)
 
+    @staticmethod
+    def _output_dimensions(source_width, source_height, width, height):
+        """Размер кадра после масштабирования — для оценки памяти под кадры.
+
+        При сохранении пропорций кадр не больше заданной рамки, поэтому
+        рамка — честная оценка сверху.
+        """
+        width = int(width or 0)
+        height = int(height or 0)
+        if width > 0 and height > 0:
+            return width, height
+        if not (source_width and source_height):
+            return None, None
+        if width > 0:
+            return width, int(source_height * width / source_width) + 1
+        if height > 0:
+            return int(source_width * height / source_height) + 1, height
+        return source_width, source_height
+
     def video_to_gif(self, input_path, output_path, width, height, keep_aspect, fps,
                      trim=None, progress_callback=None, transform=None):
-        total_duration = self._trimmed_duration(self.get_duration(input_path), trim)
+        info = self.get_media_info(input_path)
+        total_duration = self._trimmed_duration(info.get("duration"), trim)
         effective_fps = fps if fps else 10
         filter_string = self.build_filter_string(
             width, height, keep_aspect, effective_fps, transform
         )
         if not filter_string:
             filter_string = f"fps={effective_fps}"
+        out_width, out_height = self._output_dimensions(
+            info.get("width"), info.get("height"), width, height
+        )
         self._generate_gif_via_palette(
             input_path, output_path, filter_string, total_duration,
             "palettegen=stats_mode=diff", "paletteuse=dither=bayer:bayer_scale=3",
             progress_callback, trim,
+            buffered_bytes=frames_memory(out_width, out_height, effective_fps,
+                                         total_duration),
         )
         if progress_callback:
             progress_callback(100)
@@ -603,10 +674,7 @@ class FFmpegProcessor:
             # У GIF звука нет, поэтому весь бюджет достаётся видео.
             bitrate = self._target_video_bitrate(target_bytes, total_duration, 0)
             if bitrate is None:
-                raise ValueError(
-                    f"Целевой размер {target_bytes // 1024} КБ слишком мал для "
-                    "этого файла. Увеличьте размер или обрежьте по времени."
-                )
+                raise LocalizedValueError("err_target_too_small", kb=target_bytes // 1024)
         cmd = self._base_cmd(input_path, trim)
         filter_parts = []
         filter_string = self.build_filter_string(width, height, keep_aspect, fps, transform)
@@ -627,7 +695,7 @@ class FFmpegProcessor:
         total_duration = self._trimmed_duration(self.get_duration(input_path), trim)
         ext = os.path.splitext(output_path)[1].lower()
         if ext not in (".mp3", ".m4a", ".wav"):
-            raise ValueError(f"Неподдерживаемый формат звука: {ext}")
+            raise LocalizedValueError("err_unknown_format", fmt=ext)
         cmd = self._base_cmd(input_path, trim)
         cmd += ["-vn"]
         cmd += self._audio_codec_args(ext, False, bitrate)
@@ -638,70 +706,117 @@ class FFmpegProcessor:
             progress_callback(100)
 
     @staticmethod
-    def _square_filter(size, transform=None):
-        """Вписывает кадр в квадрат, добирая пустоту прозрачным фоном."""
+    def _square_filter(size, transform=None, fill=False):
+        """Приводит кадр к квадрату.
+
+        fill=False — вписывает целиком, добирая пустоту прозрачным фоном;
+        fill=True — заполняет квадрат, обрезая лишнее по краям от центра:
+        широкая картинка иначе превращалась в узкую полоску посреди
+        прозрачного смайлика.
+        """
         parts = list(transform.filters()) if transform else []
-        parts.append(
-            f"scale={size}:{size}:force_original_aspect_ratio=decrease,"
-            f"pad={size}:{size}:(ow-iw)/2:(oh-ih)/2:color=0x00000000"
-        )
+        if fill:
+            parts.append(
+                f"scale={size}:{size}:force_original_aspect_ratio=increase,"
+                f"crop={size}:{size}"
+            )
+        else:
+            parts.append(
+                f"scale={size}:{size}:force_original_aspect_ratio=decrease,"
+                f"pad={size}:{size}:(ow-iw)/2:(oh-ih)/2:color=0x00000000"
+            )
         return ",".join(parts)
 
     def _search_fps_within_limit(self, duration, max_frames, fps_cap, encode,
-                                 fits, progress_callback, limit_error, suffix=".gif"):
+                                 fits, progress_callback, limit_error, suffix=".gif",
+                                 limit_bytes=None, fps_hint=None):
         """Подбирает максимальный FPS, при котором результат влезает в лимиты.
 
-        Бинарный поиск вместо перебора: попыток выходит около пяти вместо
-        полутора десятков, а каждая — это полная перекодировка.
+        Возвращает пару (содержимое файла, FPS). Каждая попытка — полная
+        перекодировка, поэтому их число важнее всего остального:
+
+        - первой пробуется самая высокая частота: короткий смайлик чаще
+          всего влезает сразу, и тогда хватает одной попытки, а не пяти;
+        - промах подсказывает следующую попытку: вес GIF и APNG почти
+          пропорционален числу кадров, и частота пересчитывается по весу;
+        - дальше — обычное деление пополам между известными границами.
+          Ответ тот же, что у чистого бинарного поиска: крайний FPS,
+          который ещё влезает.
+
+        fps_hint — частота, найденная для старшего размера комплекта. Если
+        с ней результат влезает, она принимается сразу: у младших размеров
+        тот же ролик, а значит и та же частота, только файл легче.
         """
         if max_frames and duration:
             fps_cap = min(fps_cap, max(1, int(max_frames / duration)))
-        low, high = 1, max(1, int(fps_cap))
+        high = max(1, int(fps_cap))
         attempt = 0
-        expected_attempts = _expected_search_steps(low, high)
-        best_result = None
+        expected_attempts = _expected_search_steps(1, high)
+        best_fps = None
+        failed_fps = high + 1
         last_error = None
+        guesses_left = 2
+        probe = min(high, max(1, int(fps_hint))) if fps_hint else high
 
         with tempfile.TemporaryDirectory() as attempts_dir:
             # Расширение обязательно: без него FFmpeg не выбирает мультиплексор
             # и отказывается открывать выходной файл.
             candidate_path = os.path.join(attempts_dir, f"candidate{suffix}")
-            while low <= high:
-                fps = (low + high) // 2
+            best_path = f"{candidate_path}.best"
+            while True:
                 attempt_progress = _search_step_progress(
                     progress_callback, attempt, expected_attempts
                 )
                 attempt += 1
+                size = None
                 try:
-                    encode(fps, candidate_path, attempt_progress)
+                    encode(probe, candidate_path, attempt_progress)
                 except ConversionCancelled:
                     raise
                 except RuntimeError as exc:
                     last_error = exc
-                    high = fps - 1
-                    continue
+                    failed_fps = probe
+                else:
+                    size = os.path.getsize(candidate_path)
+                    problem = fits(candidate_path)
+                    if problem is not None:
+                        last_error = problem
+                        failed_fps = probe
+                    else:
+                        best_fps = probe
+                        shutil.copyfile(candidate_path, best_path)
+                        if fps_hint and attempt == 1:
+                            break
 
-                problem = fits(candidate_path)
-                if problem is not None:
-                    last_error = RuntimeError(problem)
-                    high = fps - 1
-                    continue
+                lower = best_fps or 0
+                if failed_fps - lower <= 1:
+                    break
+                guess = None
+                if size and limit_bytes and guesses_left:
+                    guesses_left -= 1
+                    # Запас 5 %: целимся чуть ниже лимита, чтобы попасть.
+                    guess = int(probe * limit_bytes * 0.95 / size)
+                if guess is None:
+                    probe = (lower + failed_fps) // 2
+                else:
+                    probe = min(failed_fps - 1, max(lower + 1, guess))
+                probe = max(1, probe)
 
-                best_result = f"{candidate_path}.best"
-                shutil.copyfile(candidate_path, best_result)
-                low = fps + 1
-
-            if best_result is None:
-                raise last_error or RuntimeError(limit_error)
-            with open(best_result, "rb") as handle:
-                return handle.read()
+            if best_fps is None:
+                raise last_error or limit_error
+            with open(best_path, "rb") as handle:
+                return handle.read(), best_fps
 
     def _convert_sized_gif(self, input_path, output_path, size, max_bytes,
                            max_frames=None, fps_cap=15, trim=None, transform=None,
-                           progress_callback=None):
-        """Квадратный GIF под лимиты площадки: размер файла и число кадров."""
+                           progress_callback=None, fps_hint=None, fill=False):
+        """Квадратный GIF под лимиты площадки: размер файла и число кадров.
+
+        Возвращает выбранную частоту кадров — её подхватывают младшие
+        размеры комплекта (см. fps_hint у _search_fps_within_limit).
+        """
         duration = self._trimmed_duration(self.get_duration(input_path), trim)
-        vf_base = self._square_filter(size, transform)
+        vf_base = self._square_filter(size, transform, fill)
         limit_kb = max_bytes // 1024
 
         def encode(fps, destination, attempt_progress):
@@ -709,44 +824,125 @@ class FFmpegProcessor:
                 input_path, destination, f"fps={fps},{vf_base}", duration,
                 "palettegen=reserve_transparent=1", "paletteuse",
                 attempt_progress, trim,
+                buffered_bytes=frames_memory(size, size, fps, duration),
             )
 
         def fits(path):
             if max_frames is not None:
                 frames = self.get_frame_count(path)
                 if frames is not None and frames > max_frames:
-                    return f"В GIF больше {max_frames} кадров."
-            if os.path.getsize(path) > max_bytes:
-                return f"GIF не удалось уложить в лимит {limit_kb} КБ."
+                    return LocalizedRuntimeError("err_too_many_frames", frames=max_frames)
+            size = os.path.getsize(path)
+            if size > max_bytes:
+                return LocalizedRuntimeError(
+                    "err_over_limit", limit=limit_kb, got=size // 1024
+                )
             return None
 
-        blob = self._search_fps_within_limit(
+        blob, fps = self._search_fps_within_limit(
             duration, max_frames, fps_cap, encode, fits, progress_callback,
-            f"Не удалось создать GIF в пределах {limit_kb} КБ.",
+            LocalizedRuntimeError("err_limit_unreachable", limit=limit_kb),
+            limit_bytes=max_bytes, fps_hint=fps_hint,
         )
         with open(output_path, "wb") as handle:
             handle.write(blob)
         if progress_callback:
             progress_callback(100)
+        return fps
+
+    def convert_square_gif(self, input_path, output_path, size, max_bytes,
+                           max_frames=None, fps_cap=15, trim=None, transform=None,
+                           progress_callback=None, fps_hint=None, fill=False):
+        """Квадратный GIF под лимиты любой площадки. Возвращает выбранный FPS."""
+        return self._convert_sized_gif(
+            input_path, output_path, size, max_bytes, max_frames=max_frames,
+            fps_cap=fps_cap, trim=trim, transform=transform,
+            progress_callback=progress_callback, fps_hint=fps_hint, fill=fill,
+        )
 
     def convert_twitch_gif(self, input_path, output_path, size, progress_callback=None,
-                           trim=None, transform=None):
-        """Создаёт квадратный GIF для Twitch: максимум 60 кадров и 1 МБ."""
-        self._convert_sized_gif(
+                           trim=None, transform=None, fps_hint=None, fill=False):
+        """Создаёт квадратный GIF для Twitch: максимум 60 кадров и 1 МБ.
+
+        Возвращает выбранную частоту кадров.
+        """
+        return self._convert_sized_gif(
             input_path, output_path, size, TWITCH_MAX_GIF_BYTES,
-            max_frames=TWITCH_MAX_FRAMES, fps_cap=15, trim=trim,
+            max_frames=TWITCH_MAX_FRAMES, fps_cap=TWITCH_FPS_CAP, trim=trim,
             transform=transform, progress_callback=progress_callback,
+            fps_hint=fps_hint, fill=fill,
         )
 
     def convert_discord_gif(self, input_path, output_path, size, max_bytes,
                             fps_cap=30, trim=None, transform=None,
-                            progress_callback=None):
+                            progress_callback=None, fill=False):
         """Анимированный эмодзи Discord: у него ограничен только размер файла."""
-        self._convert_sized_gif(
+        return self._convert_sized_gif(
             input_path, output_path, size, max_bytes, max_frames=None,
             fps_cap=fps_cap, trim=trim, transform=transform,
-            progress_callback=progress_callback,
+            progress_callback=progress_callback, fill=fill,
         )
+
+    def convert_animated_webp(self, input_path, output_path, size, max_bytes,
+                              fps_cap=20, max_duration=None, max_frames=None,
+                              trim=None, transform=None, fill=False,
+                              progress_callback=None):
+        """Квадратный анимированный WEBP под лимит веса (WhatsApp, 7TV).
+
+        В отличие от GIF у WEBP полноценная полупрозрачность и сжатие с
+        потерями. Вес подбирается частотой кадров; если не влезает даже
+        один кадр в секунду, качество снижается ступенями.
+        """
+        duration = self._trimmed_duration(self.get_duration(input_path), trim)
+        if max_duration:
+            duration = min(duration, float(max_duration)) if duration else float(max_duration)
+        trim_length = (trim or (0, 0))[1]
+        limits = [float(value) for value in (trim_length, max_duration) if value]
+        output_length = min(limits) if limits else None
+        vf_base = self._square_filter(size, transform, fill)
+        limit_kb = max_bytes // 1024
+        last_error = None
+
+        def fits(path):
+            weight = os.path.getsize(path)
+            if weight > max_bytes:
+                return LocalizedRuntimeError(
+                    "err_over_limit", limit=limit_kb, got=weight // 1024
+                )
+            return None
+
+        for quality in WEBP_QUALITY_STEPS:
+            def encode(fps, destination, attempt_progress, quality=quality):
+                cmd = self._base_cmd(input_path, trim)
+                cmd += ["-vf", f"fps={fps},{vf_base},format=yuva420p"]
+                cmd += ["-an", "-c:v", "libwebp_anim", "-quality", str(quality),
+                        "-loop", "0"]
+                if output_length:
+                    cmd += ["-t", f"{output_length:.3f}"]
+                cmd += ["-f", "webp", "-progress", "pipe:1", "-nostats", destination]
+                self._run_with_progress(cmd, duration, attempt_progress)
+
+            try:
+                blob, _fps = self._search_fps_within_limit(
+                    duration, max_frames, fps_cap, encode, fits, progress_callback,
+                    LocalizedRuntimeError("err_limit_unreachable", limit=limit_kb),
+                    suffix=".webp", limit_bytes=max_bytes,
+                )
+            except ConversionCancelled:
+                raise
+            except LocalizedRuntimeError as exc:
+                # Не влезло даже при одном кадре в секунду — пробуем качество
+                # ниже. Любая другая ошибка (сломанный файл) дальше не лечится.
+                if exc.key not in ("err_over_limit", "err_limit_unreachable"):
+                    raise
+                last_error = exc
+                continue
+            with open(output_path, "wb") as handle:
+                handle.write(blob)
+            if progress_callback:
+                progress_callback(100)
+            return
+        raise last_error
 
     def convert_apng(self, input_path, output_path, width, height, keep_aspect,
                      fps, trim=None, progress_callback=None, transform=None):
@@ -772,7 +968,7 @@ class FFmpegProcessor:
 
     def convert_discord_apng(self, input_path, output_path, size, max_bytes,
                              max_duration=None, fps_cap=30, trim=None,
-                             transform=None, progress_callback=None):
+                             transform=None, progress_callback=None, fill=False):
         """Анимированный стикер Discord: APNG с полноценной полупрозрачностью.
 
         В отличие от GIF, APNG хранит 8-битную альфу — мягкие края эмодзи
@@ -782,32 +978,38 @@ class FFmpegProcessor:
         duration = self._trimmed_duration(self.get_duration(input_path), trim)
         if max_duration:
             duration = min(duration, float(max_duration)) if duration else float(max_duration)
-        vf_base = self._square_filter(size, transform)
+        # Длина фрагмента — меньшее из обрезки и лимита площадки. Раньше при
+        # заданном лимите -t всегда был равен ему, и конец обрезки терялся:
+        # фрагмент «со 2-й по 3-ю секунду» превращался в пятисекундный.
+        trim_length = (trim or (0, 0))[1]
+        limits = [float(value) for value in (trim_length, max_duration) if value]
+        output_length = min(limits) if limits else None
+        vf_base = self._square_filter(size, transform, fill)
         limit_kb = max_bytes // 1024
 
         def encode(fps, destination, attempt_progress):
             cmd = self._base_cmd(input_path, trim)
             cmd += ["-vf", f"fps={fps},{vf_base}"]
             cmd += ["-an", "-c:v", "apng", "-pix_fmt", "rgba", "-plays", "0"]
-            if max_duration:
-                cmd += ["-t", f"{float(max_duration):.3f}"]
-            else:
-                cmd += self._trim_output_args(trim)
+            if output_length:
+                cmd += ["-t", f"{output_length:.3f}"]
             # Расширение у файла .png, поэтому мультиплексор задаём явно —
             # иначе FFmpeg запишет одиночную картинку вместо анимации.
             cmd += ["-f", "apng", "-progress", "pipe:1", "-nostats", destination]
             self._run_with_progress(cmd, duration, attempt_progress)
 
         def fits(path):
-            if os.path.getsize(path) > max_bytes:
-                return f"APNG не удалось уложить в лимит {limit_kb} КБ."
+            size = os.path.getsize(path)
+            if size > max_bytes:
+                return LocalizedRuntimeError(
+                    "err_over_limit", limit=limit_kb, got=size // 1024
+                )
             return None
 
-        blob = self._search_fps_within_limit(
+        blob, _fps = self._search_fps_within_limit(
             duration, None, fps_cap, encode, fits, progress_callback,
-            f"Не удалось создать APNG в пределах {limit_kb} КБ. "
-            "Сократите длительность или упростите анимацию.",
-            suffix=".png",
+            LocalizedRuntimeError("err_limit_unreachable", limit=limit_kb),
+            suffix=".png", limit_bytes=max_bytes,
         )
         with open(output_path, "wb") as handle:
             handle.write(blob)
@@ -932,6 +1134,7 @@ class FFmpegProcessor:
         start_time=0.0,
         progress_callback=None,
         transform=None,
+        fill=False,
     ):
         """Конвертация видео/GIF в WEBM VP9 для Telegram (стикер или emoji).
 
@@ -939,17 +1142,17 @@ class FFmpegProcessor:
         обрезается по выбранному месту, а не всегда с начала.
         """
         if target not in ("sticker", "emoji"):
-            raise ValueError(f"Неизвестный тип Telegram-видео: {target}")
+            raise LocalizedValueError("err_unknown_format", fmt=target)
 
         max_duration = min(
             float(max_duration) if max_duration else MAX_VIDEO_DURATION_SEC,
             MAX_VIDEO_DURATION_SEC,
         )
         if max_duration <= 0:
-            raise ValueError("Длительность Telegram-видео должна быть больше 0 секунд.")
+            raise LocalizedValueError("err_duration_zero")
 
         vf = build_telegram_video_filter(
-            target, max_duration, transform.filters() if transform else None
+            target, max_duration, transform.filters() if transform else None, fill
         )
         input_duration = self.get_duration(input_path)
         is_gif = input_path.lower().endswith(".gif")
@@ -990,62 +1193,83 @@ class FFmpegProcessor:
             ]
             self._run_with_progress(cmd, effective_duration, attempt_callback)
 
-        # Меньший CRF = лучше качество и больший файл. Бинарным поиском находим
-        # минимальный (самый качественный) CRF, укладывающийся в лимит 256 KB.
+        # Меньший CRF = лучше качество и больший файл. Ищем минимальный (самый
+        # качественный) CRF, при котором файл влезает в лимит 256 KB.
+        #
+        # Каждая попытка — полное кодирование VP9, поэтому их число важнее
+        # всего. Первой пробуется лучшая планка качества: простой стикер
+        # часто влезает сразу. Промах подсказывает следующую попытку: у VP9
+        # вес примерно вдвое падает на каждые CRF_PER_HALVING единиц. Дальше —
+        # деление пополам между известными границами, поэтому ответ тот же,
+        # что у чистого бинарного поиска, а попыток обычно 2–4 вместо 6.
         low, high = 28, 60
         best_blob = None
         last_error = None
         last_size = None
         attempt = 0
         expected_attempts = _expected_search_steps(low, high)
+        fitting_crf = high + 1   # наименьший известный CRF, который влезает
+        failed_crf = low - 1     # наибольший известный CRF, который не влезает
+        guesses_left = 2
+        crf = low
 
         with tempfile.TemporaryDirectory() as attempts_dir:
             candidate_path = os.path.join(attempts_dir, "candidate.webm")
             best_path = os.path.join(attempts_dir, "best.webm")
-            while low <= high:
-                crf = (low + high) // 2
+            while True:
                 attempt_callback = _search_step_progress(
                     progress_callback, attempt, expected_attempts
                 )
                 attempt += 1
+                size = None
                 try:
                     encode_with_crf(crf, candidate_path, attempt_callback)
                 except ConversionCancelled:
                     raise
                 except RuntimeError as exc:
                     last_error = exc
-                    low = crf + 1
-                    continue
-
-                size = os.path.getsize(candidate_path)
-                output_duration = self.get_duration(candidate_path)
-                if output_duration and output_duration > max_duration + 0.05:
-                    last_error = RuntimeError(
-                        f"Длительность {output_duration:.2f} сек превышает лимит "
-                        f"{MAX_VIDEO_DURATION_SEC:.0f} сек."
-                    )
-                    raise last_error
-
-                last_size = size
-                if size <= MAX_WEBM_SIZE_BYTES:
-                    shutil.copyfile(candidate_path, best_path)
-                    best_blob = best_path
-                    high = crf - 1
+                    failed_crf = crf
                 else:
-                    low = crf + 1
+                    size = os.path.getsize(candidate_path)
+                    output_duration = self.get_duration(candidate_path)
+                    if output_duration and output_duration > max_duration + 0.05:
+                        raise LocalizedRuntimeError(
+                            "err_duration_over", duration=output_duration,
+                            limit=MAX_VIDEO_DURATION_SEC,
+                        )
+                    last_size = size
+                    if size <= MAX_WEBM_SIZE_BYTES:
+                        shutil.copyfile(candidate_path, best_path)
+                        best_blob = best_path
+                        fitting_crf = crf
+                    else:
+                        failed_crf = crf
+
+                if fitting_crf - failed_crf <= 1:
+                    break
+                guess = None
+                if size and guesses_left:
+                    guesses_left -= 1
+                    # Целимся на 8 % ниже лимита, чтобы попасть с первого раза.
+                    guess = crf + math.ceil(
+                        CRF_PER_HALVING * math.log2(size / (MAX_WEBM_SIZE_BYTES * 0.92))
+                    )
+                if guess is None:
+                    crf = (failed_crf + fitting_crf) // 2
+                else:
+                    crf = min(fitting_crf - 1, max(failed_crf + 1, guess))
 
             if best_blob is None:
                 if last_error:
                     raise last_error
                 size_kb = (last_size or 0) // 1024
-                raise RuntimeError(
-                    f"Не удалось уложиться в лимит 256 KB (получено {size_kb} KB). "
-                    "Упростите анимацию, сократите длительность или уменьшите детализацию."
+                raise LocalizedRuntimeError(
+                    "err_over_limit", limit=MAX_WEBM_SIZE_BYTES // 1024, got=size_kb
                 )
             shutil.copyfile(best_blob, output_path)
 
         issues = validate_webm_file(output_path, self.get_duration(output_path))
         if issues:
-            raise RuntimeError(issues[0])
+            raise issues[0]
         if progress_callback:
             progress_callback(100)

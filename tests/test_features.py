@@ -53,12 +53,12 @@ subprocess.run(["ffmpeg","-y","-f","lavfi","-i","testsrc=duration=1:size=160x120
                 "-c:v","libx264","-pix_fmt","yuv420p",vid], check=True, capture_output=True)
 
 # чистый профиль настроек
-QSettings(ORGANIZATION, ORGANIZATION).clear()
+QSettings(ORGANIZATION, ORGANIZATION).clear(); pin_language()  # чистый тестовый профиль
 w = MainWindow(); w.output_dir = WORK; w.output_dir_edit.setText(WORK); w.show(); app.processEvents()
 
 def t_version():
-    assert APP_VERSION == "1.0.0", APP_VERSION
-    assert version_string() == "1.0.0", version_string()
+    assert APP_VERSION == "1.1.0", APP_VERSION
+    assert version_string() == "1.1.0", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
     assert version_string() in w.version_label.text(), w.version_label.text()
@@ -159,7 +159,8 @@ def t_status_dot():
     idx = w.file_list.model().index(0, 0)
     assert d._status_of(idx) is not None
     for status in ("Ожидание","Обработка","Готово","Ошибка"):
-        assert status in StatusDotDelegate.STATUS_COLORS
+        assert status in StatusDotDelegate.STATUS_ROLES
+        assert d._colors[status].startswith("#"), d._colors
     # статуса больше нет в тексте строки
     assert "[" not in w.file_list.item(0).text(), w.file_list.item(0).text()
 check("статус-точка вместо текста в скобках", t_status_dot)
@@ -298,12 +299,239 @@ def t_language_switch_keeps_selection():
 check("смена языка сохраняет выделение и выбранный формат",
       t_language_switch_keeps_selection)
 
+# ---------- Версия 1.1: темы, предпросмотр, вставка, обновления ----------
+import time as _time
+from PyQt6.QtGui import QImage, QColor
+from PyQt6.QtWidgets import QLabel as _QLabel
+
+
+def settle(ms=300):
+    deadline = _time.monotonic() + ms / 1000.0
+    while _time.monotonic() < deadline:
+        app.processEvents()
+        _time.sleep(0.01)
+
+
+def t_platform_themes():
+    from styles import palette, theme_for_tab, THEMES
+    from widgets import ToggleSwitch
+    from main_window import TAB_MAIN, TAB_TWITCH, TAB_WHATSAPP
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    assert len(THEMES) == win.settings_tabs.count(), "у каждой вкладки должна быть тема"
+    geometry = {}
+    for tab in range(win.settings_tabs.count()):
+        win.settings_tabs.setCurrentIndex(tab)
+        settle(260)
+        sheet = win.right_panel.styleSheet()
+        assert bool(sheet) == (tab != TAB_MAIN), f"вкладка {tab}: таблица стилей {bool(sheet)}"
+        accent = palette(theme_for_tab(tab))["accent"]
+        toggle = win.right_panel.findChildren(ToggleSwitch)[0]
+        assert toggle._colors["track_on"] == accent, (tab, toggle._colors["track_on"], accent)
+        # Тема меняет только цвета: кнопки вкладок и применения на месте.
+        geometry[tab] = [b.geometry().getRect() for b in win.tab_buttons] + [
+            win.apply_all_button.geometry().getRect(),
+            win.apply_selected_button.geometry().getRect()]
+        covers = [c for c in win.right_panel.findChildren(_QLabel)
+                  if c.graphicsEffect() is not None]
+        assert not covers, "снимок плавного перехода не убрался"
+    assert all(g == geometry[0] for g in geometry.values()), geometry
+    # Очередь остаётся в основной теме при любой вкладке.
+    win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    assert win.styleSheet() == "" and win.file_list.styleSheet() == ""
+    win.settings_tabs.setCurrentIndex(TAB_WHATSAPP); settle(260)
+    win.close()
+check("темы вкладок площадок: цвета меняются, вёрстка — нет", t_platform_themes)
+
+
+def t_theme_contrast():
+    from styles import palette, contrast_ratio, THEMES
+    pairs = [("text", "surface"), ("button_text", "button_bg"),
+             ("bright_text", "selected_bg"), ("callout_text", "callout_bg"),
+             ("tab_text", "tab_bg"), ("caption_text", "surface"),
+             ("check_text", "surface"), ("bright_text", "primary_bg"),
+             ("text", "popup_bg")]
+    problems = []
+    for theme in THEMES:
+        colors = palette(theme)
+        for fg, bg in pairs:
+            ratio = contrast_ratio(colors[fg], colors[bg])
+            if ratio < 4.5:
+                problems.append(f"{theme}: {fg} на {bg} = {ratio:.2f}")
+        ratio = contrast_ratio(colors["note_text"], colors["surface"])
+        if ratio < 4.5:
+            problems.append(f"{theme}: note_text на surface = {ratio:.2f}")
+    assert not problems, problems
+check("контраст текста во всех темах не ниже WCAG AA", t_theme_contrast)
+
+
+def t_fill_toggles_and_whatsapp():
+    from main_window import DATA_ROLE
+    win = MainWindow(); win.output_dir = WORK
+    win._on_scan_finished([img], []); win.file_list.setCurrentRow(0)
+    win._apply_whatsapp_preset("whatsapp_static")
+    assert win._selected_format == "whatsapp_static"
+    assert "512" in win.whatsapp_hint_label.text()
+    win.fill_toggles["discord"].setChecked(True)
+    app.processEvents()
+    assert all(t.isChecked() for t in win.fill_toggles.values()), "тумблеры разошлись"
+    entry = win.file_list.item(0).data(DATA_ROLE)
+    assert entry.settings.fill_square, "заполнение не записалось в настройки файла"
+    win.file_list.clearSelection(); app.processEvents()
+    win.file_list.setCurrentRow(0); app.processEvents()
+    assert win.fill_toggles["twitch"].isChecked(), "заполнение не вернулось при выборе файла"
+    win._apply_telegram_preset("tg_sticker_png")
+    assert not win.fill_toggles["telegram"].isEnabled(), "у стикера Telegram заполнять нечего"
+    win._apply_telegram_preset("tg_emoji_png")
+    assert win.fill_toggles["telegram"].isEnabled()
+    win.close()
+check("общий тумблер «заполнить квадрат» и пресеты WhatsApp", t_fill_toggles_and_whatsapp)
+
+
+def t_chat_preview():
+    from main_window import TAB_DISCORD
+    win = MainWindow(); win.output_dir = WORK; win.show()
+    preview = win.chat_previews["discord"]
+    assert not preview.has_content()
+    win._on_scan_finished([img, vid], [])
+    win.file_list.setCurrentRow(0)
+    deadline = _time.monotonic() + 10
+    while not preview.has_content() and _time.monotonic() < deadline:
+        settle(50)
+    assert preview.has_content(), "кадр для предпросмотра не пришёл"
+    win.settings_tabs.setCurrentIndex(TAB_DISCORD); settle(250)
+    shot = preview.grab().toImage()
+    assert not shot.isNull()
+    # Поворот сразу виден в предпросмотре.
+    width_before = preview._frame.width()
+    win.rotate_combo.setCurrentIndex(1); app.processEvents()
+    assert preview._frame.width() == preview._source.height(), "поворот не дошёл до предпросмотра"
+    win.rotate_combo.setCurrentIndex(0); app.processEvents()
+    assert preview._frame.width() == width_before
+    # Видео: кадр готовит FFmpeg в фоне.
+    win.file_list.setCurrentRow(1)
+    deadline = _time.monotonic() + 15
+    while not (preview.has_content() and preview._is_video) and _time.monotonic() < deadline:
+        settle(50)
+    assert preview._is_video and preview.has_content(), "кадр видео не пришёл"
+    win.file_list.clearSelection(); app.processEvents()
+    assert not preview.has_content(), "без выбранного файла предпросмотр должен опустеть"
+    win.close()
+check("предпросмотр в чате: картинка, видео, поворот", t_chat_preview)
+
+
+def t_render_emote_fill():
+    from chat_preview import render_emote
+    wide = QImage(200, 50, QImage.Format.Format_ARGB32)
+    wide.fill(QColor("#ff0000"))
+    fit = render_emote(wide, 40, fill=False).toImage()
+    fill = render_emote(wide, 40, fill=True).toImage()
+    assert fit.pixelColor(20, 2).alpha() == 0, "при вписывании сверху должна быть пустота"
+    assert fill.pixelColor(20, 2).alpha() == 255, "при заполнении квадрат должен быть залит"
+check("предпросмотр повторяет вписывание и заполнение квадрата", t_render_emote_fill)
+
+
+def t_paste():
+    from PyQt6.QtWidgets import QApplication as _QApp
+    win = MainWindow(); win.output_dir = WORK
+    before = win.file_list.count()
+    picture = QImage(64, 32, QImage.Format.Format_ARGB32); picture.fill(QColor("#00ff00"))
+    _QApp.clipboard().setImage(picture)
+    win._paste_from_clipboard()
+    assert win.file_list.count() == before + 1, "картинка из буфера не добавилась"
+    added = win.file_list.item(win.file_list.count() - 1).data(Qt.ItemDataRole.UserRole).input_path
+    assert os.path.isfile(added) and os.path.basename(added).startswith("clipboard_"), added
+    _QApp.clipboard().setText(vid)
+    win._paste_from_clipboard()
+    assert win.file_list.count() == before + 2, "путь из буфера не добавился"
+    _QApp.clipboard().setText("просто текст")
+    win._paste_from_clipboard()
+    assert win.file_list.count() == before + 2
+    assert "нет" in win.current_file_label.text(), win.current_file_label.text()
+    os.remove(added)
+    win.close()
+from PyQt6.QtCore import Qt
+check("Ctrl+V: картинка и путь из буфера встают в очередь", t_paste)
+
+
+def t_update_check():
+    import updater
+    assert updater.is_newer("v1.2.0", "1.1.0") and not updater.is_newer("1.1.0", "1.1.0")
+    assert updater.is_newer("2.0", "1.9.9") and not updater.is_newer("garbage", "1.0")
+    original = updater.fetch_latest_release
+    updater.fetch_latest_release = lambda timeout=0: ("9.9.9", "https://github.com/x/y/releases/9.9.9")
+    try:
+        store = QSettings(ORGANIZATION, ORGANIZATION)
+        store.setValue("check_updates", True); store.setValue("last_update_check", 0.0)
+        win = MainWindow()
+        win._start_update_check()
+        deadline = _time.monotonic() + 5
+        while not win.update_button.isVisibleTo(win) and _time.monotonic() < deadline:
+            settle(50)
+        assert win.update_button.isVisibleTo(win), "ссылка на новую версию не появилась"
+        assert "9.9.9" in win.update_button.text()
+        # Отключённая проверка не ходит в сеть.
+        store.setValue("check_updates", False); store.setValue("last_update_check", 0.0)
+        win2 = MainWindow(); win2._start_update_check(); settle(200)
+        assert not win2.update_button.isVisibleTo(win2)
+        win.close(); win2.close()
+    finally:
+        updater.fetch_latest_release = original
+        QSettings(ORGANIZATION, ORGANIZATION).setValue("check_updates", False)
+check("проверка обновлений: ссылка появляется, отключение работает", t_update_check)
+
+
+def t_twitch_long_warning():
+    from job_model import ConversionJob, JobSettings
+    long_clip = os.path.join(WORK, "долгий.mp4")
+    subprocess.run(["ffmpeg","-y","-f","lavfi","-i","testsrc=duration=20:size=64x64:rate=10",
+                    "-c:v","libx264","-pix_fmt","yuv420p",long_clip], check=True, capture_output=True)
+    win = MainWindow()
+    # FFmpeg окно находит по таймеру после старта — здесь зовём сразу.
+    win._check_ffmpeg_status(quiet=True)
+    asked = []
+    original = QMessageBox.question
+    QMessageBox.question = staticmethod(lambda *a, **k: (asked.append(a), QMessageBox.StandardButton.No)[1])
+    try:
+        job = ConversionJob(input_path=long_clip, output_dir=WORK,
+                            settings=JobSettings(output_format="twitch_animated_112"))
+        assert win._confirm_twitch_animation_length([job]) is False
+        assert asked, "предупреждение не показано"
+        trimmed = ConversionJob(input_path=long_clip, output_dir=WORK,
+                                settings=JobSettings(output_format="twitch_animated_112",
+                                                     trim_enabled=True, trim_start=0,
+                                                     trim_duration=3))
+        asked.clear()
+        assert win._confirm_twitch_animation_length([trimmed]) is True and not asked
+    finally:
+        QMessageBox.question = original
+    win.close()
+check("предупреждение о длинной анимации для Twitch", t_twitch_long_warning)
+
+
+def t_error_language_follows_ui():
+    from errors import LocalizedValueError
+    from main_window import DATA_ROLE, STATUS_ERROR
+    win = MainWindow(); win.output_dir = WORK
+    win._on_scan_finished([img], [])
+    item = win.file_list.item(0)
+    entry = item.data(DATA_ROLE)
+    entry.status = STATUS_ERROR
+    entry.message = LocalizedValueError("err_audio_from_non_video")
+    item.setData(DATA_ROLE, entry); win._refresh_item_text(item)
+    assert "звук" in item.text().lower(), item.text()
+    win.language_combo.setCurrentIndex(win.language_combo.findData("en")); app.processEvents()
+    item = win.file_list.item(0)
+    assert "audio" in item.text().lower(), item.text()
+    win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); app.processEvents()
+    win.close()
+check("текст ошибки в очереди переводится при смене языка", t_error_language_follows_ui)
+
 w.grab().save(os.path.join(OUT, "features.png"))
 # Закрываем окно: иначе фоновые потоки доживают до выхода интерпретатора
 # и Qt иногда завершает процесс с ненулевым кодом.
 w.close()
 app.processEvents()
-QSettings(ORGANIZATION, ORGANIZATION).clear()
+QSettings(ORGANIZATION, ORGANIZATION).clear(); pin_language()  # чистый тестовый профиль
 shutil.rmtree(WORK, ignore_errors=True)
 
 print()

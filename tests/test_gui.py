@@ -303,7 +303,7 @@ def t_format_groups():
     # Заголовок отличается от пунктов оттенком, иначе группа сливается со списком.
     # Начертание задаёт элемент, а приглушённый цвет — делегат: и правило QSS,
     # и setForeground у элемента таблица стилей списка перебивает.
-    from main_window import FORMAT_HEADER_COLOR
+    from styles import palette
     from widgets import GroupHeaderDelegate
     from PyQt6.QtGui import QColor, QPalette
     from PyQt6.QtWidgets import QStyleOptionViewItem
@@ -311,14 +311,16 @@ def t_format_groups():
                       if model.item(r).flags() == Qt.ItemFlag.NoItemFlags)
     header_item = model.item(header_row)
     assert header_item.font().bold(), "заголовок группы должен быть выделен"
-    assert header_item.font().pointSize() < w.format_combo.font().pointSize()
+    from PyQt6.QtGui import QFontInfo
+    assert QFontInfo(header_item.font()).pixelSize() < \
+        QFontInfo(w.format_combo.font()).pixelSize()
 
     # В Qt 6 делегат спрашивают по индексу: itemDelegate() отдаёт
     # стандартный, даже когда свой уже назначен.
     delegate = w.format_combo.itemDelegate()
-    assert hasattr(delegate, "SEPARATOR_COLOR"), "нет черты между группами"
+    assert hasattr(delegate, "_separator_color"), "нет черты между группами"
     assert isinstance(delegate, GroupHeaderDelegate), type(delegate).__name__
-    muted = QColor(FORMAT_HEADER_COLOR)
+    muted = QColor(palette()["format_header"])
     for row, expect_muted in ((header_row, True), (header_row + 1, False)):
         option = QStyleOptionViewItem()
         delegate.initStyleOption(option, model.index(row, 0))

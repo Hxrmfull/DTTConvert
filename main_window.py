@@ -5,8 +5,8 @@ import subprocess
 import time
 from dataclasses import dataclass
 
-from PyQt6.QtCore import (Qt, QLocale, QSettings, QSize, QThread, QTimer,
-                          QUrl, pyqtSignal)
+from PyQt6.QtCore import (Qt, QEasingCurve, QLocale, QPropertyAnimation,
+                          QSettings, QSize, QThread, QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (
     QAction,
     QColor,
@@ -21,6 +21,7 @@ from PyQt6.QtGui import (
     QPen,
     QPixmap,
     QFont,
+    QFontInfo,
     QFontMetrics,
     QShortcut,
     QStandardItem,
@@ -50,10 +51,12 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QScrollArea,
     QFrame,
+    QGraphicsOpacityEffect,
 )
 
 from animation_info import animated_image_info
-from app_info import APP_NAME, ORGANIZATION, version_string, window_title
+from app_info import APP_NAME, ORGANIZATION, RELEASES_URL, version_string, window_title
+from updater import CHECK_INTERVAL_SEC, UpdateCheckWorker, is_newer
 from i18n import (LANGUAGE_NAMES, LANGUAGE_ORDER, current_language,
                   language_from_locale, set_language, tr)
 from discord_utils import (
@@ -61,7 +64,18 @@ from discord_utils import (
     discord_hint,
     is_discord_format,
 )
+from errors import first_line, message_text
+from styles import (THEME_MAIN, build_stylesheet, palette, theme_for_tab)
+from chat_preview import ChatPreview
+from whatsapp_utils import (
+    WHATSAPP_PRESET_COLUMNS,
+    WHATSAPP_STATIC,
+    is_whatsapp_format,
+    whatsapp_hint,
+    whatsapp_preset_label,
+)
 from ffmpeg_utils import INDETERMINATE_PROGRESS, check_ffmpeg_available
+from format_names import PLATFORM_LABEL_KEYS, format_label
 from job_model import (
     AUDIO_KEEP,
     AUDIO_NONE,
@@ -72,6 +86,7 @@ from job_model import (
 )
 from telegram_utils import (
     MAX_VIDEO_DURATION_SEC,
+    is_telegram_emoji_format,
     is_telegram_format,
     is_telegram_video_format,
     telegram_hint,
@@ -86,24 +101,30 @@ from widgets import (
 from worker import (
     ANIMATABLE_IMAGE_EXTS,
     ANIMATED_WEBP_EXT,
+    GIF_EXT,
+    IMAGE_EXTS,
     VIDEO_EXTS,
     ConversionWorker,
     get_category,
 )
 from twitch_utils import (
-    twitch_preset_buttons,
+    TWITCH_MIN_SMOOTH_FPS,
+    TWITCH_PRESET_COLUMNS,
+    twitch_preset_label,
+    is_twitch_animated_format,
     is_twitch_format,
+    twitch_effective_fps,
     twitch_hint,
+    twitch_smooth_duration_limit,
 )
 
 _log = logging.getLogger(__name__)
 
 DATA_ROLE = Qt.ItemDataRole.UserRole
 
-SUPPORTED_INPUT_EXTS = {
-    ".jpg", ".jpeg", ".png", ".apng", ".webp", ".awebp", ".bmp", ".avif",
-    ".heic", ".heif", ".gif", ".mp4", ".webm", ".avi",
-}
+# Один список на всё: типы файлов знает обработчик, и окно принимает
+# ровно то, что он умеет разобрать.
+SUPPORTED_INPUT_EXTS = IMAGE_EXTS | VIDEO_EXTS | {GIF_EXT, ANIMATED_WEBP_EXT}
 
 def supported_files_filter():
     """Фильтр диалога выбора файлов строится из списка поддерживаемых
@@ -115,16 +136,6 @@ def supported_files_filter():
     return f'{tr("dlg_media_filter")} ({masks});;{tr("dlg_all_files")} (*.*)'
 
 
-# Названия форматов от языка не зависят, поэтому лежат как есть. Всё, что
-# переводится, собирается функциями ниже: константы уровня модуля считаются
-# при импорте, и в них перевод застыл бы на языке первого запуска.
-PLAIN_FORMAT_NAMES = {
-    "jpg": "JPG", "png": "PNG", "webp": "WEBP", "bmp": "BMP", "avif": "AVIF",
-    "gif": "GIF", "apng": "APNG",
-    "mp4": "MP4", "webm": "WEBM", "avi": "AVI",
-    "mp3": "MP3", "m4a": "M4A · AAC", "wav": "WAV",
-}
-
 # Список форматов разбит на группы: без них два десятка пунктов сливались
 # в одну простыню, и звуковые форматы терялись между видео и стикерами.
 FORMAT_GROUPS = [
@@ -134,26 +145,6 @@ FORMAT_GROUPS = [
     ("fmt_audio_only", ["mp3", "m4a", "wav"]),
     ("fmt_frames", ["frames"]),
 ]
-
-# Пресеты площадок в списке форматов не показываются — им отведены свои
-# вкладки. Но подписи нужны и здесь: очередь пишет формат словами, а поле
-# формата показывает выбранный пресет отдельной строкой.
-PLATFORM_LABEL_KEYS = {
-    "tg_sticker_png": "lbl_tg_sticker_png",
-    "tg_sticker_webp": "lbl_tg_sticker_webp",
-    "tg_sticker_webm": "lbl_tg_sticker_webm",
-    "tg_emoji_png": "lbl_tg_emoji_png",
-    "tg_emoji_webp": "lbl_tg_emoji_webp",
-    "tg_emoji_webm": "lbl_tg_emoji_webm",
-    "twitch_static_112": "lbl_twitch_static_112",
-    "twitch_static_pack": "lbl_twitch_static_pack",
-    "twitch_animated_112": "lbl_twitch_animated_112",
-    "twitch_animated_pack": "lbl_twitch_animated_pack",
-    "discord_sticker_png": "lbl_dc_sticker_png",
-    "discord_sticker_apng": "lbl_dc_sticker_apng",
-    "discord_emoji_png": "lbl_dc_emoji_png",
-    "discord_emoji_gif": "lbl_dc_emoji_gif",
-}
 
 # Подписи кнопок на вкладке Discord.
 DISCORD_PRESET_LABEL_KEYS = {
@@ -173,16 +164,6 @@ FORMAT_TOOLTIP_KEYS = {
     "wav": "tip_wav",
     "avif": "tip_avif",
 }
-
-
-def format_label(code):
-    """Подпись формата на текущем языке."""
-    if code in PLAIN_FORMAT_NAMES:
-        return PLAIN_FORMAT_NAMES[code]
-    if code == "frames":
-        return tr("frames_label")
-    key = PLATFORM_LABEL_KEYS.get(code)
-    return tr(key) if key else code
 
 
 def format_tooltip(code):
@@ -227,9 +208,6 @@ FORMAT_POPUP_MAX_HEIGHT = 420
 # подписью и полем, либо в пустоту. Всё, что шире, достаётся очереди —
 # списку файлов ширина нужна для длинных имён.
 SETTINGS_PANEL_MAX_WIDTH = 660
-# Оттенок подписи группы в списке форматов: заметно приглушённее названий
-# форматов (#e6e6e6), чтобы заголовок не читался как ещё один пункт.
-FORMAT_HEADER_COLOR = "#74768a"
 # Поля по бокам кнопки-вкладки из таблицы стилей плюс рамка.
 TAB_BUTTON_PADDING = 30
 
@@ -248,7 +226,13 @@ EXT_TO_DEFAULT_CODE = {
     ".mp4": "mp4",
     ".webm": "webm",
     ".avi": "avi",
+    ".tif": "png",
+    ".tiff": "png",
 }
+# Прочие видеоконтейнеры по умолчанию превращаются в MP4: он открывается
+# везде, а сам исходный контейнер программа не пишет.
+EXT_TO_DEFAULT_CODE.update({ext: "mp4" for ext in VIDEO_EXTS
+                            if ext not in EXT_TO_DEFAULT_CODE})
 
 STATUS_PENDING = "Ожидание"
 STATUS_PROCESSING = "Обработка"
@@ -269,12 +253,9 @@ REPORT_STATUS_KEYS = {
     STATUS_PROCESSING: "status_processing",
 }
 
-TAB_MAIN, TAB_TELEGRAM, TAB_TWITCH, TAB_DISCORD = 0, 1, 2, 3
+TAB_MAIN, TAB_TELEGRAM, TAB_TWITCH, TAB_DISCORD, TAB_WHATSAPP = 0, 1, 2, 3, 4
 
-THUMBNAIL_IMAGE_EXTS = {
-    ".jpg", ".jpeg", ".png", ".apng", ".webp", ".bmp", ".gif",
-    ".avif", ".heic", ".heif",
-}
+THUMBNAIL_IMAGE_EXTS = IMAGE_EXTS | {GIF_EXT}
 
 # Расширения, за которыми может прятаться анимация. Только для них имеет
 # смысл звать get_category из потока интерфейса: она открывает файл, чтобы
@@ -283,8 +264,21 @@ THUMBNAIL_IMAGE_EXTS = {
 MAYBE_ANIMATED_EXTS = ANIMATABLE_IMAGE_EXTS | {ANIMATED_WEBP_EXT}
 
 THUMBNAIL_SIZE = 48
+# Кадр для предпросмотра в чате: самый крупный его вариант — 160 px,
+# с запасом под экраны с масштабом 200 %.
+PREVIEW_FRAME_SIZE = 320
+# Сколько готовых кадров предпросмотра держим про запас.
+PREVIEW_CACHE_LIMIT = 24
+# Настройки, которые «Сброс» сохраняет: они не про обработку файлов.
+PRESERVED_ON_RESET = ("language", "check_updates")
+# Сколько дней хранятся картинки, вставленные из буфера обмена.
+PASTED_KEEP_DAYS = 7
+# Что предпросмотр проигрывает как анимацию (умеет QMovie).
+PREVIEW_MOVIE_EXTS = {".gif", ".webp"}
 # Больше этого числа миниатюр не строим — иначе добавление папки подвешивает окно.
 THUMBNAIL_LIMIT = 300
+# Сколько длится плавная смена цветов при переходе между вкладками площадок.
+THEME_FADE_MS = 180
 # Столько кадров при извлечении считаем поводом переспросить пользователя.
 FRAME_COUNT_WARNING_THRESHOLD = 2000
 
@@ -481,6 +475,81 @@ class VideoThumbnailWorker(QThread):
                 self.thumbnail_ready.emit(path, image)
 
 
+def pasted_directory():
+    """Куда сохраняются картинки из буфера обмена.
+
+    Рядом с журналом, в профиле пользователя: папка с программой может
+    быть закрыта на запись (Program Files).
+    """
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    directory = os.path.join(base, ORGANIZATION, "pasted")
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+
+def save_clipboard_image(image):
+    """Сохраняет картинку из буфера в PNG и возвращает путь к файлу."""
+    directory = pasted_directory()
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(directory, f"clipboard_{stamp}.png")
+    counter = 1
+    while os.path.exists(path):
+        path = os.path.join(directory, f"clipboard_{stamp}_{counter}.png")
+        counter += 1
+    if not image.save(path, "PNG"):
+        raise OSError(path)
+    return path
+
+
+def cleanup_pasted_images(max_age_days=PASTED_KEEP_DAYS):
+    """Удаляет старые вставки: они нужны, пока файл стоит в очереди."""
+    try:
+        directory = pasted_directory()
+        limit = time.time() - max_age_days * 24 * 60 * 60
+        for name in os.listdir(directory):
+            path = os.path.join(directory, name)
+            if (name.startswith("clipboard_") and name.endswith(".png")
+                    and os.path.getmtime(path) < limit):
+                os.remove(path)
+    except OSError:
+        _log.debug("Не удалось почистить папку вставок", exc_info=True)
+
+
+class PreviewFrameWorker(QThread):
+    """Готовит кадр для предпросмотра в фоне.
+
+    Фото на 4000 px или кадр из видео в потоке интерфейса подвешивали бы
+    окно при каждом выборе строки. Кадр сразу уменьшается до размера,
+    которого хватает самому крупному предпросмотру.
+    """
+
+    frame_ready = pyqtSignal(str, QImage)
+
+    def __init__(self, path, ffmpeg, parent=None):
+        super().__init__(parent)
+        self.path = path
+        self.ffmpeg = ffmpeg
+
+    def run(self):
+        image = None
+        try:
+            if os.path.splitext(self.path)[1].lower() in VIDEO_EXTS:
+                if self.ffmpeg is not None:
+                    import tempfile
+
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        frame_path = os.path.join(tmp_dir, "preview.png")
+                        self.ffmpeg.extract_single_frame(
+                            self.path, frame_path, PREVIEW_FRAME_SIZE, 0, True
+                        )
+                        image = QImage(frame_path)
+            else:
+                image = scaled_thumbnail(self.path, PREVIEW_FRAME_SIZE)
+        except Exception:
+            _log.debug("Не удалось подготовить предпросмотр %s", self.path, exc_info=True)
+        self.frame_ready.emit(self.path, image if image is not None else QImage())
+
+
 class FolderScanWorker(QThread):
     """Обходит папки в фоне, чтобы интерфейс не подвисал на больших деревьях."""
 
@@ -561,14 +630,16 @@ class FileQueueList(QListWidget):
         # что сюда можно перетаскивать файлы.
         painter = QPainter(self.viewport())
         rect = self.viewport().rect().adjusted(18, 18, -18, -18)
-        accent = "#6c63ff" if self._drag_active else "#3f4152"
+        colors = palette()
+        accent = colors["accent"] if self._drag_active else colors["drop_border"]
         pen = QPen(QColor(accent))
         pen.setWidth(2)
         pen.setStyle(Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.drawRoundedRect(rect, 10, 10)
 
-        painter.setPen(QColor("#6f7180" if not self._drag_active else "#9a95ff"))
+        painter.setPen(QColor(colors["drop_text_active"] if self._drag_active
+                              else colors["drop_text"]))
         icon_font = painter.font()
         icon_font.setPointSize(30)
         painter.setFont(icon_font)
@@ -582,7 +653,7 @@ class FileQueueList(QListWidget):
         painter.drawText(
             text_rect,
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
-            tr("drop_hint"),
+            tr("drop_hint") + "\n\n" + tr("drop_hint_paste"),
         )
         painter.end()
 
@@ -652,6 +723,11 @@ class MainWindow(QMainWindow):
         self.scan_worker = None
         self._last_report = []
         self._ffmpeg_probe = None
+        # Кадры для предпросмотра готовятся в фоне и кэшируются по пути.
+        self._preview_frames = {}
+        self._preview_worker = None
+        self._pending_preview_path = None
+        self._preview_shown_path = None
         self._thumb_worker = None
         self._queue_info_worker = None
         self._media_info_cache = {}
@@ -675,6 +751,11 @@ class MainWindow(QMainWindow):
         # Предупреждение показываем после отрисовки окна, иначе оно всплывает
         # раньше самого приложения.
         QTimer.singleShot(0, self._check_ffmpeg_status)
+        self._update_worker = None
+        self._update_url = None
+        # Сеть — не раньше, чем окно появилось: старт не должен её ждать.
+        QTimer.singleShot(1500, self._start_update_check)
+        cleanup_pasted_images()
 
     def _restore_window_state(self):
         """Возвращает размер окна, вкладку и положение разделителя."""
@@ -688,6 +769,7 @@ class MainWindow(QMainWindow):
         if 0 <= tab < self.settings_tabs.count():
             self.settings_tabs.setCurrentIndex(tab)
         self._sync_tab_buttons()
+        self._apply_tab_theme()
 
     def _save_window_state(self):
         self.settings_store.setValue("window_geometry", self.saveGeometry())
@@ -753,7 +835,13 @@ class MainWindow(QMainWindow):
             self._rebuilding = False
         self._update_queue_counter()
         self._set_settings_enabled(bool(self.file_list.selectedItems()))
+        self._apply_tab_theme()
         self._check_ffmpeg_status(quiet=True)
+        # Ссылка на обновление живёт на прежней нижней панели.
+        if self._update_url:
+            self._on_update_found(
+                self.settings_store.value("known_update", "", type=str), self._update_url
+            )
 
     def _build_ui(self):
         # Пока панель собирается, обработчики сигналов трогать нечего.
@@ -763,6 +851,10 @@ class MainWindow(QMainWindow):
         # модели — заголовок «Изображения» и JPG: после смены языка при
         # выбранном пресете площадки JPG пропадал из списка до перезапуска.
         self._preset_row_shown = False
+        # Тема панели принадлежит прежним виджетам: новые ещё не перекрашены.
+        self._current_theme = None
+        # Предпросмотры будут новые и пустые.
+        self._preview_shown_path = None
         central = QWidget()
         self.setCentralWidget(central)
         root_layout = QVBoxLayout(central)
@@ -771,7 +863,7 @@ class MainWindow(QMainWindow):
 
         # Заголовок не дублируем — он уже есть в шапке окна.
         self.ffmpeg_warning_label = QLabel("")
-        self.ffmpeg_warning_label.setStyleSheet("color:#ff6b6b; font-weight:600;")
+        self.ffmpeg_warning_label.setObjectName("WarningLabel")
         self.ffmpeg_warning_label.setVisible(False)
         root_layout.addWidget(self.ffmpeg_warning_label)
 
@@ -880,6 +972,9 @@ class MainWindow(QMainWindow):
             (QKeySequence("Alt+Up"), lambda: self._move_selected(-1)),
             (QKeySequence("Alt+Down"), lambda: self._move_selected(1)),
             (QKeySequence("Ctrl+Return"), self._on_start_clicked),
+            # Поле ввода с фокусом перехватывает Ctrl+V раньше окна, поэтому
+            # вставка текста в поля работает как обычно.
+            (QKeySequence(QKeySequence.StandardKey.Paste), self._paste_from_clipboard),
             (QKeySequence("Esc"), self._on_stop_clicked),
         ]
         for sequence, handler in bindings:
@@ -973,14 +1068,7 @@ class MainWindow(QMainWindow):
         self.tg_source_label = QLabel("")
         self.tg_source_label.setObjectName("HintLabel")
         layout.addWidget(self.tg_source_label)
-
-        note = QLabel(
-            tr("platform_note")
-        )
-        note.setObjectName("NoteLabel")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        layout.addStretch(1)
+        self._add_platform_footer(layout, "telegram")
         return tab
 
     def _build_twitch_tab(self):
@@ -997,23 +1085,84 @@ class MainWindow(QMainWindow):
         self.twitch_hint_label.setMinimumHeight(42)
         layout.addWidget(self.twitch_hint_label)
 
-        buttons_layout = QGridLayout()
-        buttons_layout.setHorizontalSpacing(10)
+        # Две колонки, как у Telegram: смайлики Twitch отдельно от значков
+        # и смайликов расширений чата.
+        presets_layout = QGridLayout()
+        presets_layout.setHorizontalSpacing(10)
         self.twitch_preset_buttons = {}
-        for idx, (label, code) in enumerate(twitch_preset_buttons()):
-            button = self._make_preset_button(label, code, self._apply_twitch_preset)
-            self.twitch_preset_buttons[code] = button
-            buttons_layout.addWidget(button, idx // 2, idx % 2)
-        layout.addLayout(buttons_layout)
+        for column, (caption_key, codes) in enumerate(TWITCH_PRESET_COLUMNS):
+            header = QLabel(tr(caption_key))
+            header.setObjectName("GroupCaption")
+            presets_layout.addWidget(header, 0, column)
+            for row, code in enumerate(codes, start=1):
+                button = self._make_preset_button(
+                    twitch_preset_label(code), code, self._apply_twitch_preset
+                )
+                self.twitch_preset_buttons[code] = button
+                presets_layout.addWidget(button, row, column)
+        layout.addLayout(presets_layout)
+        self._add_platform_footer(layout, "twitch")
+        return tab
 
-        note = QLabel(
-            tr("platform_note")
-        )
+    def _build_whatsapp_tab(self):
+        tab = QWidget()
+        tab.setObjectName("SettingsPage")
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(4, 6, 4, 4)
+        layout.setSpacing(5)
+
+        self.whatsapp_format_code = WHATSAPP_STATIC
+        self.whatsapp_hint_label = QLabel()
+        self.whatsapp_hint_label.setObjectName("HintCallout")
+        self.whatsapp_hint_label.setWordWrap(True)
+        self.whatsapp_hint_label.setMinimumHeight(42)
+        layout.addWidget(self.whatsapp_hint_label)
+
+        presets_layout = QGridLayout()
+        presets_layout.setHorizontalSpacing(10)
+        self.whatsapp_preset_buttons = {}
+        for column, (caption_key, codes) in enumerate(WHATSAPP_PRESET_COLUMNS):
+            header = QLabel(tr(caption_key))
+            header.setObjectName("GroupCaption")
+            presets_layout.addWidget(header, 0, column)
+            for row, code in enumerate(codes, start=1):
+                button = self._make_preset_button(
+                    whatsapp_preset_label(code), code, self._apply_whatsapp_preset
+                )
+                self.whatsapp_preset_buttons[code] = button
+                presets_layout.addWidget(button, row, column)
+        layout.addLayout(presets_layout)
+        self._add_platform_footer(layout, "whatsapp")
+        return tab
+
+    def _add_platform_footer(self, layout, platform):
+        """Низ вкладки площадки: тумблер «заполнить квадрат», примечание
+        о том, к чему применяется пресет, и предпросмотр в макете чата.
+
+        Предпросмотр занимает свободное место под настройками и тянется
+        вместе с окном, но не выше своего предела.
+        """
+        fill_toggle = ToggleSwitch(tr("fill_square"))
+        fill_toggle.setToolTip(tr("fill_square_tip"))
+        fill_toggle.toggled.connect(self._on_fill_toggled)
+        self.fill_toggles[platform] = fill_toggle
+        layout.addWidget(fill_toggle)
+
+        note = QLabel(tr("platform_note"))
         note.setObjectName("NoteLabel")
         note.setWordWrap(True)
         layout.addWidget(note)
-        layout.addStretch(1)
-        return tab
+
+        # Отдельной подписи у предпросмотра нет: макет чата узнаётся сам, а
+        # строка заголовка не помещалась на вкладке Telegram с выбранным
+        # видео — та и так самая тесная.
+        preview = ChatPreview(platform)
+        preview.setToolTip(tr("preview_title"))
+        self.chat_previews[platform] = preview
+        layout.addWidget(preview, 1)
+        # Пустота — после предпросмотра: когда он дорос до предела,
+        # лишняя высота уходит сюда, а не в зазоры между строками.
+        layout.addStretch(0)
 
     def _on_reset_settings(self):
         answer = QMessageBox.question(
@@ -1025,7 +1174,13 @@ class MainWindow(QMainWindow):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        # Язык и проверка обновлений — не параметры обработки: сброс их не
+        # трогает, иначе после перезапуска окно внезапно меняло бы язык.
+        kept = {key: self.settings_store.value(key)
+                for key in PRESERVED_ON_RESET if self.settings_store.contains(key)}
         self.settings_store.clear()
+        for key, value in kept.items():
+            self.settings_store.setValue(key, value)
         self.settings_store.sync()
         self.output_dir = os.path.expanduser("~")
         self.output_dir_edit.setText(self.output_dir)
@@ -1033,12 +1188,19 @@ class MainWindow(QMainWindow):
         self.telegram_format_code = "tg_sticker_png"
         self.twitch_format_code = "twitch_static_112"
         self.discord_format_code = "discord_sticker_png"
+        self.whatsapp_format_code = WHATSAPP_STATIC
         self.settings_tabs.setCurrentIndex(TAB_MAIN)
         self._load_settings_into_panel(JobSettings())
         self.current_file_label.setText(tr("reset_done"))
 
     def _build_right_panel(self):
+        # Тумблеры «заполнить квадрат» на каждой вкладке площадки и
+        # предпросмотры — по площадке; заполняются при сборке вкладок.
+        self.fill_toggles = {}
+        self.chat_previews = {}
         container = QWidget()
+        # Панель целиком перекрашивается под вкладку площадки (см. _apply_tab_theme).
+        self.right_panel = container
         # Ширина с запасом: вертикальная полоса прокрутки съедает 12 px, и без
         # запаса из-за неё появлялась ещё и горизонтальная.
         container.setMinimumWidth(500)
@@ -1065,6 +1227,7 @@ class MainWindow(QMainWindow):
             ("Telegram", tr("tab_telegram_tip")),
             ("Twitch", tr("tab_twitch_tip")),
             ("Discord", tr("tab_discord_tip")),
+            ("WhatsApp", tr("tab_whatsapp_tip")),
         )
         for index, (caption, tip) in enumerate(captions):
             button = QPushButton(caption)
@@ -1122,6 +1285,7 @@ class MainWindow(QMainWindow):
         self.settings_tabs.addWidget(self._build_telegram_tab())
         self.settings_tabs.addWidget(self._build_twitch_tab())
         self.settings_tabs.addWidget(self._build_discord_tab())
+        self.settings_tabs.addWidget(self._build_whatsapp_tab())
         self._ui_ready = True
 
         apply_layout = QHBoxLayout()
@@ -1146,9 +1310,7 @@ class MainWindow(QMainWindow):
         # из-за этого нижние строки настроек уезжали под прокрутку.
         self._set_settings_enabled(False)
         self._update_enabled_states()
-        self._update_telegram_hint()
-        self._update_twitch_hint()
-        self._update_discord_hint()
+        self._update_hints()
         self._sync_tab_buttons()
         return container
 
@@ -1315,9 +1477,12 @@ class MainWindow(QMainWindow):
         """
         header = QStandardItem(caption)
         header.setFlags(Qt.ItemFlag.NoItemFlags)
-        font = self.format_combo.font()
+        font = QFont(self.format_combo.font())
         font.setBold(True)
-        font.setPointSize(max(7, font.pointSize() - 1))
+        # Через QFontInfo, а не pointSize: таблица стилей задаёт размер в
+        # пикселях, и pointSize у такого шрифта равен -1 — заголовок тогда
+        # получал случайный размер вместо «на ступень мельче пунктов».
+        font.setPixelSize(max(9, QFontInfo(font).pixelSize() - 2))
         header.setFont(font)
         return header
 
@@ -1350,7 +1515,9 @@ class MainWindow(QMainWindow):
         # Ставим его самому списку, а не его виду: QComboBox подменяет
         # делегат вида своим, и назначенный напрямую до отрисовки не доживает.
         self.format_combo.setItemDelegate(
-            GroupHeaderDelegate(FORMAT_HEADER_COLOR, self.format_combo)
+            # Подпись группы заметно приглушённее названий форматов,
+            # чтобы заголовок не читался как ещё один пункт.
+            GroupHeaderDelegate(palette()["format_header"], self.format_combo)
         )
         view = self.format_combo.view()
         view.setMaximumHeight(FORMAT_POPUP_MAX_HEIGHT)
@@ -1417,14 +1584,7 @@ class MainWindow(QMainWindow):
                 self.discord_preset_buttons[code] = button
                 presets_layout.addWidget(button, row, column)
         layout.addLayout(presets_layout)
-
-        note = QLabel(
-            tr("platform_note")
-        )
-        note.setObjectName("NoteLabel")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        layout.addStretch(1)
+        self._add_platform_footer(layout, "discord")
         return tab
 
     def _build_bottom_panel(self):
@@ -1493,6 +1653,15 @@ class MainWindow(QMainWindow):
             tr("version_tip", app=APP_NAME, version=version_string())
         )
         self.version_label.mouseDoubleClickEvent = lambda _event: self._open_log_folder()
+        self.version_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.version_label.customContextMenuRequested.connect(self._on_version_menu)
+
+        # Ссылка на новую версию: появляется, только если она вышла.
+        self.update_button = QPushButton()
+        self.update_button.setObjectName("UpdateButton")
+        self.update_button.setToolTip(tr("update_tip"))
+        self.update_button.setVisible(False)
+        self.update_button.clicked.connect(self._open_update_page)
 
         self.open_folder_button = QPushButton(tr("open_folder"))
         self.open_folder_button.setToolTip(tr("open_folder_tip"))
@@ -1510,6 +1679,7 @@ class MainWindow(QMainWindow):
         self.language_combo.currentIndexChanged.connect(self._on_language_changed)
         action_row.addWidget(self.language_combo, alignment=Qt.AlignmentFlag.AlignBottom)
 
+        action_row.addWidget(self.update_button, alignment=Qt.AlignmentFlag.AlignBottom)
         action_row.addWidget(self.version_label, alignment=Qt.AlignmentFlag.AlignBottom)
         action_row.addWidget(self.open_folder_button, alignment=Qt.AlignmentFlag.AlignBottom)
         action_row.addWidget(self.report_button, alignment=Qt.AlignmentFlag.AlignBottom)
@@ -1892,8 +2062,7 @@ class MainWindow(QMainWindow):
         if status == STATUS_PROCESSING:
             suffix = f"   ·   {entry.progress}%"
         elif status == STATUS_ERROR:
-            short_message = entry.message.splitlines()[0] if entry.message else ""
-            suffix = f"   ·   {short_message}"
+            suffix = f"   ·   {first_line(entry.message)}"
         else:
             suffix = ""
         code = entry.settings.output_format
@@ -1905,7 +2074,7 @@ class MainWindow(QMainWindow):
         # остаётся только когда несёт подробности (процент или ошибка).
         item.setText(f"{name}  →  {format_display}{suffix}")
         if status == STATUS_ERROR and entry.message:
-            item.setToolTip(tr("error_tooltip", message=entry.message))
+            item.setToolTip(tr("error_tooltip", message=message_text(entry.message)))
         else:
             item.setToolTip(entry.input_path)
         self._refreshing_items = False
@@ -1917,7 +2086,13 @@ class MainWindow(QMainWindow):
 
     def _on_queue_context_menu(self, position):
         item = self.file_list.itemAt(position)
+        paste_action = QAction(tr("menu_paste"), self)
+        paste_action.triggered.connect(self._paste_from_clipboard)
         if item is None:
+            # По пустому месту — только вставка: остальным пунктам нужен файл.
+            menu = QMenu(self)
+            menu.addAction(paste_action)
+            menu.exec(self.file_list.viewport().mapToGlobal(position))
             return
         entry = self._entry(item)
         menu = QMenu(self)
@@ -1935,16 +2110,52 @@ class MainWindow(QMainWindow):
         if entry.status == STATUS_ERROR and entry.message:
             details_action = QAction(tr("menu_error"), self)
             details_action.triggered.connect(
-                lambda: QMessageBox.critical(self, tr("dlg_error_details"), entry.message)
+                lambda: QMessageBox.critical(self, tr("dlg_error_details"),
+                                             message_text(entry.message))
             )
             menu.addAction(details_action)
 
         menu.addSeparator()
+        menu.addAction(paste_action)
         remove_action = QAction(tr("menu_remove"), self)
         remove_action.triggered.connect(self._on_remove_selected)
         menu.addAction(remove_action)
 
         menu.exec(self.file_list.viewport().mapToGlobal(position))
+
+    def _paste_from_clipboard(self):
+        """Ctrl+V: файлы, путь или картинка из буфера обмена — в очередь.
+
+        Картинку, скопированную в браузере или снятую «Ножницами», файлом
+        не передать, поэтому она сохраняется в папку программы и в очередь
+        встаёт уже как обычный PNG.
+        """
+        if self.worker is not None:
+            return
+        mime = QApplication.clipboard().mimeData()
+        if mime is None:
+            return
+        paths = []
+        if mime.hasUrls():
+            paths = [url.toLocalFile() for url in mime.urls() if url.isLocalFile()]
+        if not paths and mime.hasText():
+            candidates = [line.strip().strip('"') for line in mime.text().splitlines()]
+            paths = [path for path in candidates if path and os.path.exists(path)]
+        if paths:
+            self._add_files_from_paths(paths)
+            return
+        if mime.hasImage():
+            image = QImage(mime.imageData())
+            if not image.isNull():
+                try:
+                    path = save_clipboard_image(image)
+                except OSError as exc:
+                    self.current_file_label.setText(tr("paste_failed", error=exc))
+                    return
+                self._add_files_from_paths([path])
+                self.current_file_label.setText(tr("paste_added", count=1))
+                return
+        self.current_file_label.setText(tr("paste_nothing"))
 
     def _reveal_in_explorer(self, path):
         """Открывает проводник с выделенным файлом."""
@@ -1963,14 +2174,100 @@ class MainWindow(QMainWindow):
     def _on_item_double_clicked(self, item):
         entry = self._entry(item)
         if entry.status == STATUS_ERROR and entry.message:
-            QMessageBox.critical(self, tr("dlg_error_details"), entry.message)
+            QMessageBox.critical(self, tr("dlg_error_details"), message_text(entry.message))
 
     def _on_selection_changed(self):
         selected_items = self.file_list.selectedItems()
         self._set_settings_enabled(len(selected_items) > 0)
         if not selected_items:
+            self._refresh_previews()
             return
         self._load_settings_into_panel(self._entry(selected_items[-1]).settings)
+
+    # --- предпросмотр в макете чата ---
+
+    def _preview_path(self):
+        """Файл для предпросмотра: последний выделенный в очереди."""
+        selected = self.file_list.selectedItems()
+        if not selected:
+            return None
+        return self._entry(selected[-1]).input_path
+
+    def _refresh_previews(self):
+        """Обновляет предпросмотры всех площадок по выбранному файлу и пресету."""
+        previews = getattr(self, "chat_previews", None)
+        if not previews or not self._ui_ready:
+            return
+        codes = {
+            "telegram": self.telegram_format_code,
+            "twitch": self.twitch_format_code,
+            "discord": self.discord_format_code,
+            "whatsapp": self.whatsapp_format_code,
+        }
+        degrees = [value for _caption, value in rotate_options()]
+        rotate = degrees[self.rotate_combo.currentIndex()]
+        flip_h, flip_v = flip_options()[self.flip_combo.currentIndex()][1]
+        fill = self._fill_square_checked()
+        for platform, preview in previews.items():
+            preview.set_preset(codes[platform], fill)
+            preview.set_transform(rotate, flip_h, flip_v)
+
+        path = self._preview_path()
+        if path == self._preview_shown_path:
+            return
+        self._preview_shown_path = path
+        if path is None:
+            for preview in previews.values():
+                preview.set_image(None)
+            return
+        frame = self._preview_frames.get(path)
+        if frame is not None:
+            self._show_preview_frame(path, frame)
+            return
+        # Пока кадр готовится в фоне, прежний файл не показываем — это
+        # выглядело бы как предпросмотр не того файла.
+        for preview in previews.values():
+            preview.set_image(None)
+        self._pending_preview_path = path
+        self._start_preview_worker()
+
+    def _start_preview_worker(self):
+        if self._preview_worker is not None and self._preview_worker.isRunning():
+            return
+        path = self._pending_preview_path
+        if path is None:
+            return
+        self._pending_preview_path = None
+        self._preview_worker = PreviewFrameWorker(path, self._ffmpeg_probe, self)
+        self._preview_worker.frame_ready.connect(self._on_preview_frame_ready)
+        self._preview_worker.finished.connect(self._on_preview_worker_finished)
+        self._preview_worker.finished.connect(self._preview_worker.deleteLater)
+        self._preview_worker.start()
+
+    def _on_preview_worker_finished(self):
+        self._preview_worker = None
+        self._start_preview_worker()
+
+    def _on_preview_frame_ready(self, path, image):
+        # Пустой кадр не кэшируем: видео без FFmpeg покажется, как только
+        # FFmpeg найдётся, а не останется пустым до перезапуска.
+        if not image.isNull():
+            if len(self._preview_frames) >= PREVIEW_CACHE_LIMIT:
+                self._preview_frames.pop(next(iter(self._preview_frames)))
+            self._preview_frames[path] = image
+        if path == self._preview_shown_path:
+            self._show_preview_frame(path, image)
+
+    def _show_preview_frame(self, path, image):
+        ext = os.path.splitext(path)[1].lower()
+        is_video = ext in VIDEO_EXTS
+        for preview in self.chat_previews.values():
+            if ext in PREVIEW_MOVIE_EXTS:
+                # GIF и WEBP проигрываются: анимированный смайлик и выглядит
+                # иначе, чем его первый кадр.
+                preview.set_movie(path, image if not image.isNull() else None)
+            else:
+                preview.set_image(image if not image.isNull() else None, is_video)
 
     def _on_save_report(self):
         if not self._last_report:
@@ -1991,7 +2288,7 @@ class MainWindow(QMainWindow):
                         row["input_path"], format_label(row["output_format"]),
                         tr(REPORT_STATUS_KEYS[row["status"]])
                         if row["status"] in REPORT_STATUS_KEYS else row["status"],
-                        row["elapsed_sec"], row["message"],
+                        row["elapsed_sec"], first_line(row["message"]),
                     ])
         except OSError as exc:
             QMessageBox.warning(self, tr("dlg_save_failed"), str(exc))
@@ -2060,6 +2357,14 @@ class MainWindow(QMainWindow):
 
     def _update_telegram_hint(self):
         self.telegram_hint_label.setText(telegram_hint(self.telegram_format_code))
+        # У стикера Telegram одна сторона 512, другая — по пропорциям:
+        # заполнять нечего, тумблер действует только на эмодзи.
+        emoji = is_telegram_emoji_format(self.telegram_format_code)
+        toggle = self.fill_toggles.get("telegram")
+        if toggle is not None:
+            toggle.setEnabled(emoji)
+            toggle.setToolTip(tr("fill_square_tip") if emoji
+                              else tr("fill_square_sticker_tip"))
         # Поле длительности остаётся на месте и просто гаснет для статичных
         # форматов, иначе кнопки подпрыгивают при переключении пресета.
         is_video = is_telegram_video_format(self.telegram_format_code)
@@ -2079,6 +2384,17 @@ class MainWindow(QMainWindow):
         self.discord_hint_label.setText(discord_hint(self.discord_format_code))
         self._sync_preset_buttons()
 
+    def _update_whatsapp_hint(self):
+        self.whatsapp_hint_label.setText(whatsapp_hint(self.whatsapp_format_code))
+        self._sync_preset_buttons()
+
+    def _update_hints(self):
+        self._update_telegram_hint()
+        self._update_twitch_hint()
+        self._update_discord_hint()
+        self._update_whatsapp_hint()
+        self._refresh_previews()
+
     def _sync_tab_buttons(self, index=None):
         current = self.settings_tabs.currentIndex() if index is None else index
         for position, button in enumerate(self.tab_buttons):
@@ -2095,6 +2411,7 @@ class MainWindow(QMainWindow):
             (self.telegram_preset_buttons, self.telegram_format_code),
             (self.twitch_preset_buttons, self.twitch_format_code),
             (self.discord_preset_buttons, self.discord_format_code),
+            (self.whatsapp_preset_buttons, self.whatsapp_format_code),
         )
         for buttons, active_code in groups:
             for code, button in buttons.items():
@@ -2112,11 +2429,59 @@ class MainWindow(QMainWindow):
         if not self._ui_ready:
             return
         self._update_enabled_states()
+        self._apply_tab_theme(animate=self.isVisible() and not self._rebuilding)
+
+    def _apply_tab_theme(self, animate=False):
+        """Красит панель настроек в цвета площадки открытой вкладки.
+
+        Таблица стилей ставится самой панели, а не приложению: очередь и
+        нижняя панель остаются в основной теме, и окно не «прыгает»
+        целиком при каждом переключении. Темы меняют только цвета —
+        отступы и шрифты у них общие, поэтому вёрстка не сдвигается.
+        """
+        theme = theme_for_tab(self.settings_tabs.currentIndex())
+        if theme == self._current_theme:
+            return
+        snapshot = self.right_panel.grab() if animate else None
+        # Пустая строка — основная тема: панель берёт стили приложения.
+        self.right_panel.setStyleSheet(
+            "" if theme == THEME_MAIN else build_stylesheet(theme)
+        )
+        colors = palette(theme)
+        for toggle in self.right_panel.findChildren(ToggleSwitch):
+            toggle.set_palette(colors)
+        self._current_theme = theme
+        if snapshot is not None and not snapshot.isNull():
+            self._fade_out_snapshot(snapshot)
+
+    def _fade_out_snapshot(self, snapshot):
+        """Плавный переход: снимок панели в прежних цветах тает поверх новой.
+
+        QSS не умеет анимировать цвета, а пересобирать таблицу стилей на
+        каждом кадре дорого. Снимок с прозрачностью — дёшево и гладко.
+        """
+        cover = QLabel(self.right_panel)
+        cover.setPixmap(snapshot)
+        cover.setGeometry(self.right_panel.rect())
+        # Клики проходят сквозь снимок: переход не должен мешать работе.
+        cover.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        effect = QGraphicsOpacityEffect(cover)
+        effect.setOpacity(1.0)
+        cover.setGraphicsEffect(effect)
+        cover.show()
+        cover.raise_()
+        animation = QPropertyAnimation(effect, b"opacity", cover)
+        animation.setDuration(THEME_FADE_MS)
+        animation.setStartValue(1.0)
+        animation.setEndValue(0.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(cover.deleteLater)
+        animation.start()
 
     def _is_platform_format(self, output_format=None):
         fmt = output_format or self._selected_format
         return (is_telegram_format(fmt) or is_twitch_format(fmt)
-                or is_discord_format(fmt))
+                or is_discord_format(fmt) or is_whatsapp_format(fmt))
 
     def _load_settings_into_panel(self, settings):
         self._loading_settings = True
@@ -2132,7 +2497,11 @@ class MainWindow(QMainWindow):
                 self.twitch_format_code = output_format
             elif is_discord_format(output_format):
                 self.discord_format_code = output_format
+            elif is_whatsapp_format(output_format):
+                self.whatsapp_format_code = output_format
             self._select_format_in_combo(output_format)
+            for toggle in self.fill_toggles.values():
+                toggle.setChecked(settings.fill_square)
             self.resize_checkbox.setChecked(settings.resize_enabled)
             self.width_spin.setValue(settings.width)
             self.height_spin.setValue(settings.height)
@@ -2177,9 +2546,7 @@ class MainWindow(QMainWindow):
         self._update_enabled_states()
         self._autofill_tg_duration(settings)
         self._clamp_tg_duration()
-        self._update_telegram_hint()
-        self._update_twitch_hint()
-        self._update_discord_hint()
+        self._update_hints()
 
     def _current_panel_settings(self):
         """Настройки по состоянию всех вкладок сразу.
@@ -2214,6 +2581,7 @@ class MainWindow(QMainWindow):
             target_size_mb=self.target_size_spin.value(),
             audio_mode=AUDIO_NONE if self.audio_combo.currentIndex() == 1 else AUDIO_KEEP,
             audio_bitrate=AUDIO_BITRATES[self.audio_bitrate_combo.currentIndex()],
+            fill_square=self._fill_square_checked(),
         )
         if self._is_platform_format(fmt):
             # Размер и частота кадров у пресетов заданы спецификацией
@@ -2265,6 +2633,28 @@ class MainWindow(QMainWindow):
         self._set_selected_format(format_code)
         self._report_preset_applied(self._store_panel_settings(self._preset_targets()))
 
+    def _apply_whatsapp_preset(self, format_code):
+        self._set_selected_format(format_code)
+        self._report_preset_applied(self._store_panel_settings(self._preset_targets()))
+
+    def _fill_square_checked(self):
+        toggle = next(iter(self.fill_toggles.values()), None)
+        return bool(toggle and toggle.isChecked())
+
+    def _on_fill_toggled(self, checked):
+        """Тумблер «заполнить квадрат» один на все вкладки площадок.
+
+        Значение общее — это свойство файла, а не вкладки, — поэтому
+        соседние тумблеры повторяют нажатый.
+        """
+        for toggle in self.fill_toggles.values():
+            if toggle.isChecked() != checked:
+                toggle.blockSignals(True)
+                toggle.setChecked(checked)
+                toggle.blockSignals(False)
+        self._refresh_previews()
+        self._on_settings_changed()
+
     def _on_format_combo_changed(self):
         """Формат выбран списком. Пресеты площадок в нём тоже есть."""
         if self._loading_settings:
@@ -2284,6 +2674,8 @@ class MainWindow(QMainWindow):
             self.twitch_format_code = code
         elif is_discord_format(code):
             self.discord_format_code = code
+        elif is_whatsapp_format(code):
+            self.whatsapp_format_code = code
         was_loading = self._loading_settings
         self._loading_settings = True
         try:
@@ -2291,11 +2683,13 @@ class MainWindow(QMainWindow):
         finally:
             self._loading_settings = was_loading
         self._update_enabled_states()
-        self._update_telegram_hint()
-        self._update_twitch_hint()
-        self._update_discord_hint()
+        self._update_hints()
 
     def _on_settings_changed(self):
+        # Поворот и отражение видны в предпросмотре сразу, ещё до записи
+        # настроек в очередь.
+        if not self._loading_settings:
+            self._refresh_previews()
         if self._loading_settings or len(self.file_list.selectedItems()) != 1:
             return
         self._store_panel_settings(self.file_list.selectedItems())
@@ -2492,6 +2886,8 @@ class MainWindow(QMainWindow):
 
         if not self._confirm_frame_extraction(jobs):
             return
+        if not self._confirm_twitch_animation_length(jobs):
+            return
 
         self.settings_store.setValue("overwrite", overwrite)
         self._run_started_at = time.monotonic()
@@ -2541,6 +2937,49 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.No,
         )
         return answer == QMessageBox.StandardButton.Yes
+
+    def _confirm_twitch_animation_length(self, jobs):
+        """Предупреждает, если анимированный смайлик Twitch выйдет рваным.
+
+        У Twitch не больше 60 кадров на всю анимацию. Из длинного ролика
+        подбор частоты кадров честно укладывался в лимит, опускаясь до
+        двух-трёх кадров в секунду, — и обработка рапортовала «Готово»
+        о смайлике, который больше похож на слайд-шоу.
+        """
+        long_files = []
+        for job in jobs:
+            if not is_twitch_animated_format(job.output_format):
+                continue
+            duration = self._job_duration(job)
+            if duration and twitch_effective_fps(duration) < TWITCH_MIN_SMOOTH_FPS:
+                long_files.append(
+                    f"{os.path.basename(job.input_path)} — {self._format_duration(duration)}"
+                )
+        if not long_files:
+            return True
+        answer = QMessageBox.question(
+            self,
+            tr("dlg_twitch_long_title"),
+            tr("dlg_twitch_long_text", files="\n".join(long_files[:10]),
+               seconds=f"{twitch_smooth_duration_limit():g}"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _job_duration(self, job):
+        """Сколько секунд исходника пойдёт в работу с учётом обрезки."""
+        duration = self._duration_of(job.input_path)
+        if duration is None and self._ffmpeg_probe is not None \
+                and os.path.splitext(job.input_path)[1].lower() in VIDEO_EXTS | {".gif"}:
+            duration = self._ffmpeg_probe.get_duration(job.input_path)
+        trim = job.settings.effective_trim
+        if duration and trim:
+            start, length = trim
+            duration = max(0.0, duration - start)
+            if length:
+                duration = min(duration, length)
+        return duration
 
     def _set_progress_determinate(self, determinate):
         """Переключает полосу между процентами и «бегущим» режимом."""
@@ -2774,6 +3213,53 @@ class MainWindow(QMainWindow):
         except OSError:
             return False
 
+    def _on_version_menu(self, position):
+        menu = QMenu(self)
+        toggle = QAction(tr("update_check_toggle"), self)
+        toggle.setCheckable(True)
+        toggle.setChecked(self.settings_store.value("check_updates", True, type=bool))
+        toggle.toggled.connect(
+            lambda checked: self.settings_store.setValue("check_updates", checked)
+        )
+        menu.addAction(toggle)
+        log_action = QAction(tr("menu_open_log"), self)
+        log_action.triggered.connect(self._open_log_folder)
+        menu.addAction(log_action)
+        menu.exec(self.version_label.mapToGlobal(position))
+
+    def _start_update_check(self):
+        """Раз в сутки спрашивает GitHub о новой версии — в фоне и молча."""
+        if not self.settings_store.value("check_updates", True, type=bool):
+            return
+        last = self.settings_store.value("last_update_check", 0.0, type=float)
+        if time.time() - last < CHECK_INTERVAL_SEC:
+            known = self.settings_store.value("known_update", "", type=str)
+            url = self.settings_store.value("known_update_url", "", type=str)
+            if known and url and is_newer(known):
+                self._on_update_found(known, url)
+            return
+        self.settings_store.setValue("last_update_check", time.time())
+        self._update_worker = UpdateCheckWorker(self)
+        self._update_worker.update_found.connect(self._on_update_found)
+        # Ссылку снимаем до удаления объекта: иначе закрытие окна обратилось
+        # бы к уже удалённому потоку, и PyQt уронил бы процесс целиком.
+        self._update_worker.finished.connect(self._on_update_worker_finished)
+        self._update_worker.finished.connect(self._update_worker.deleteLater)
+        self._update_worker.start()
+
+    def _on_update_worker_finished(self):
+        self._update_worker = None
+
+    def _on_update_found(self, version, url):
+        self._update_url = url
+        self.settings_store.setValue("known_update", version)
+        self.settings_store.setValue("known_update_url", url)
+        self.update_button.setText(tr("update_available", version=version))
+        self.update_button.setVisible(True)
+
+    def _open_update_page(self):
+        QDesktopServices.openUrl(QUrl(self._update_url or RELEASES_URL))
+
     def _open_log_folder(self):
         from logging_setup import log_directory
 
@@ -2793,8 +3279,15 @@ class MainWindow(QMainWindow):
                 self.worker.terminate()
                 self.worker.wait(1000)
         for background in (self.scan_worker, self._thumb_worker,
-                           self._image_thumb_worker, self._queue_info_worker):
-            if background is not None and background.isRunning():
+                           self._image_thumb_worker, self._queue_info_worker,
+                           self._preview_worker, self._update_worker):
+            try:
+                running = background is not None and background.isRunning()
+            except RuntimeError:
+                # Объект потока уже удалён Qt: ждать нечего. Исключение из
+                # closeEvent PyQt превратил бы в падение всей программы.
+                continue
+            if running:
                 background.requestInterruption()
                 background.wait(2000)
         self._hide_tray_icon()

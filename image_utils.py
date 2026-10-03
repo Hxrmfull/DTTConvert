@@ -1,8 +1,9 @@
 import os
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from animation_info import animated_image_info
+from errors import LocalizedRuntimeError, LocalizedValueError
 
 from telegram_utils import (
     EMOJI_SIZE,
@@ -37,6 +38,9 @@ LOSSY_PIL_FORMATS = {"JPEG", "WEBP", "AVIF"}
 
 DEFAULT_IMAGE_QUALITY = 92
 
+# Сжатие временных PNG-кадров: они живут секунды, и скорость важнее веса.
+TEMP_PNG_COMPRESSION = 1
+
 # Имя списка кадров для concat-демультиплексора FFmpeg.
 FRAME_LIST_NAME = "frames.txt"
 
@@ -58,10 +62,9 @@ def save_within_limit(image, output_path, pil_format, limit_bytes):
                 return
         # Раньше здесь был молчаливый выход, и наружу уходил файл больше
         # лимита — площадка отвергала его уже при загрузке.
-        size_kb = os.path.getsize(output_path) // 1024
-        raise RuntimeError(
-            f"Не удалось уложиться в лимит {limit_kb} КБ (получено {size_kb} КБ). "
-            "Упростите изображение или уменьшите детализацию."
+        raise LocalizedRuntimeError(
+            "err_image_over_limit", limit=limit_kb,
+            got=os.path.getsize(output_path) // 1024,
         )
 
     image.save(output_path, format=pil_format, optimize=True)
@@ -80,18 +83,15 @@ def save_within_limit(image, output_path, pil_format, limit_bytes):
         if os.path.getsize(output_path) <= limit_bytes:
             return
 
-    size_kb = os.path.getsize(output_path) // 1024
-    hint = " Попробуйте формат WEBP — он сжимает сильнее." if has_alpha else ""
-    raise RuntimeError(
-        f"Не удалось уложиться в лимит {limit_kb} КБ (получено {size_kb} КБ).{hint}"
+    raise LocalizedRuntimeError(
+        "err_image_over_limit_alpha" if has_alpha else "err_image_over_limit",
+        limit=limit_kb, got=os.path.getsize(output_path) // 1024,
     )
 
 
 def _ensure_valid_size(width, height):
     if width <= 0 or height <= 0:
-        raise ValueError(
-            "Изображение имеет нулевой размер и, вероятно, повреждено."
-        )
+        raise LocalizedValueError("err_zero_size")
 
 
 def apply_transform(image, rotate=0, flip_horizontal=False, flip_vertical=False):
@@ -145,7 +145,7 @@ class ImageProcessor:
         output_format = output_format.lower()
         pil_format = FORMAT_TO_PIL.get(output_format)
         if pil_format is None:
-            raise ValueError(f"Неподдерживаемый формат изображения: {output_format}")
+            raise LocalizedValueError("err_unknown_format", fmt=output_format)
 
         with Image.open(input_path) as source_image:
             source_image.load()
@@ -203,12 +203,12 @@ class ImageProcessor:
 
     @classmethod
     def convert_telegram_static(cls, input_path, output_path, output_format,
-                                transform=None):
+                                transform=None, fill=False):
         """Конвертация в статичный TG-стикер или emoji (PNG/WEBP)."""
         fmt = output_format.lower()
         image_ext = static_image_extension(fmt)
         if image_ext is None:
-            raise ValueError(f"Неподдерживаемый Telegram-формат изображения: {output_format}")
+            raise LocalizedValueError("err_unknown_format", fmt=output_format)
 
         pil_format = FORMAT_TO_PIL[image_ext]
         is_emoji = fmt.startswith("tg_emoji")
@@ -225,7 +225,7 @@ class ImageProcessor:
             _ensure_valid_size(original_width, original_height)
 
             if is_emoji:
-                result = cls._fit_into_square(working, EMOJI_SIZE)
+                result = cls._fit_into_square(working, EMOJI_SIZE, fill)
             else:
                 target_width, target_height = compute_sticker_size(
                     original_width, original_height
@@ -235,10 +235,17 @@ class ImageProcessor:
             save_within_limit(result, output_path, pil_format, MAX_STATIC_SIZE_BYTES)
 
     @staticmethod
-    def _fit_into_square(image, size):
-        """Вписывает картинку в квадрат, оставляя поля прозрачными."""
+    def _fit_into_square(image, size, fill=False):
+        """Приводит картинку к квадрату.
+
+        fill=False — вписывает целиком, оставляя поля прозрачными;
+        fill=True — заполняет квадрат, обрезая лишнее по краям от центра.
+        """
         width, height = image.size
         _ensure_valid_size(width, height)
+        if fill:
+            return ImageOps.fit(image, (size, size), Image.LANCZOS,
+                                centering=(0.5, 0.5))
         ratio = min(size / width, size / height)
         new_width = max(1, round(width * ratio))
         new_height = max(1, round(height * ratio))
@@ -249,7 +256,7 @@ class ImageProcessor:
 
     @classmethod
     def convert_square_static(cls, input_path, output_path, size, limit_bytes,
-                              transform=None):
+                              transform=None, fill=False, pil_format="PNG"):
         """Квадратная статичная картинка с прозрачным фоном под лимит площадки."""
         with Image.open(input_path) as source_image:
             source_image.load()
@@ -259,21 +266,23 @@ class ImageProcessor:
                     working, transform.rotate,
                     transform.flip_horizontal, transform.flip_vertical,
                 )
-            canvas = cls._fit_into_square(working, size)
-            save_within_limit(canvas, output_path, "PNG", limit_bytes)
+            canvas = cls._fit_into_square(working, size, fill)
+            save_within_limit(canvas, output_path, pil_format, limit_bytes)
 
     @classmethod
-    def convert_twitch_static(cls, input_path, output_path, size, transform=None):
-        """Создаёт квадратный PNG для стандартного смайлика Twitch."""
+    def convert_twitch_static(cls, input_path, output_path, size, transform=None,
+                              fill=False, limit_bytes=TWITCH_MAX_STATIC_BYTES):
+        """Квадратный PNG для смайлика, значка или иконки баллов Twitch."""
         cls.convert_square_static(
-            input_path, output_path, size, TWITCH_MAX_STATIC_BYTES, transform
+            input_path, output_path, size, limit_bytes, transform, fill
         )
 
     @classmethod
     def convert_discord_static(cls, input_path, output_path, size, limit_bytes,
-                               transform=None):
+                               transform=None, fill=False):
         """Создаёт квадратный PNG для стикера или эмодзи Discord."""
-        cls.convert_square_static(input_path, output_path, size, limit_bytes, transform)
+        cls.convert_square_static(input_path, output_path, size, limit_bytes,
+                                  transform, fill)
 
     @staticmethod
     def save_frame_at(input_path, output_path, seconds=0.0, ffprobe_path=None):
@@ -295,7 +304,9 @@ class ImageProcessor:
         with Image.open(input_path) as source_image:
             frame_count = getattr(source_image, "n_frames", 1)
             source_image.seek(max(0, min(frame_index, frame_count - 1)))
-            source_image.convert("RGBA").save(output_path, format="PNG")
+            source_image.convert("RGBA").save(
+                output_path, format="PNG", compress_level=TEMP_PNG_COMPRESSION
+            )
 
     @staticmethod
     def dump_animation_frames(input_path, frames_dir, ffprobe_path=None):
@@ -322,8 +333,12 @@ class ImageProcessor:
             for index in range(frame_count):
                 source_image.seek(index)
                 name = f"frame_{index:05d}.png"
+                # Кадры временные и живут секунды, поэтому сжимаются слабо:
+                # на уровне по умолчанию PNG сжимается в разы дольше, а
+                # выигрыш в весе тут никому не нужен.
                 source_image.convert("RGBA").save(
-                    os.path.join(frames_dir, name), format="PNG"
+                    os.path.join(frames_dir, name), format="PNG",
+                    compress_level=TEMP_PNG_COMPRESSION,
                 )
                 names.append(name)
 

@@ -53,6 +53,9 @@ class JobSettings:
     # Звук: оставить как есть или убрать совсем.
     audio_mode: str = AUDIO_KEEP
     audio_bitrate: int = DEFAULT_AUDIO_BITRATE
+    # Квадратные пресеты площадок: заполнить квадрат с обрезкой краёв
+    # вместо вписывания с прозрачными полями.
+    fill_square: bool = False
 
     @property
     def effective_width(self):

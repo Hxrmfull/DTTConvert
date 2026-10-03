@@ -31,11 +31,13 @@ QMessageBox.information = staticmethod(lambda *a, **k: None)
 from language_pin import pin_language
 pin_language()  # у английских подписей другая длина
 
-from main_window import MainWindow
+import time
 
-WINDOW_BG = "#1e1f26"
-CARD_BG = "#24252e"
-BORDER = "#45475f"
+from main_window import MainWindow, THEME_FADE_MS
+from styles import palette, theme_for_tab
+
+# Фон окна общий для всех тем, а карточка и рамка у вкладок площадок свои.
+WINDOW_BG = palette()["window_bg"]
 SIZES = [(1140, 790), (1050, 730), (1000, 700), (980, 680)]
 
 window = MainWindow()
@@ -57,7 +59,13 @@ def probe():
         app.processEvents()
         for tab in range(window.settings_tabs.count()):
             window.settings_tabs.setCurrentIndex(tab)
-            app.processEvents()
+            # Смена темы плавная: ждём, пока снимок прежних цветов растает.
+            deadline = time.monotonic() + (THEME_FADE_MS + 120) / 1000.0
+            while time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.01)
+            colors = palette(theme_for_tab(tab))
+            CARD_BG, BORDER = colors["surface"], colors["card_border"]
             has_bar = scroll.verticalScrollBar().maximum() > 0
             image = window.grab().toImage()
             rect = card_rect(card)

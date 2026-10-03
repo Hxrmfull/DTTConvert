@@ -35,7 +35,7 @@ w = MainWindow()
 w.resize(*DEFAULT_WINDOW_SIZE)
 w.show()
 
-TABS = {0: "Основная", 1: "Telegram", 2: "Twitch", 3: "Discord"}
+TABS = {0: "Основная", 1: "Telegram", 2: "Twitch", 3: "Discord", 4: "WhatsApp"}
 TYPES = (QLabel, QPushButton, QAbstractSpinBox, QCheckBox, QComboBox)
 
 def run():
