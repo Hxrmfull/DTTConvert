@@ -1,70 +1,74 @@
 # DTTConvert
 
-Конвертер картинок, GIF, видео и стикеров для **D**iscord, **T**elegram и
-**T**witch, а также WhatsApp, 7TV и BTTV. Пресеты сами подбирают размер,
-частоту кадров и вес, чтобы площадка приняла файл с первой попытки.
+**English** · [Русский](README.ru.md)
 
-Интерфейс на русском и английском, язык переключается в правом нижнем углу.
+Converts images, GIFs, videos and stickers for **D**iscord, **T**elegram and
+**T**witch, as well as WhatsApp, 7TV and BTTV. Presets pick the size, frame
+rate and file size on their own, so the platform accepts the file on the
+first try.
 
-![Окно DTTConvert](docs/screenshot.png)
+The interface is in English and Russian; switch the language in the
+bottom-right corner.
 
-## Скачать
+![DTTConvert window](docs/screenshot.png)
 
-Windows 10/11, 64 бита — страница [релизов](../../releases).
+## Download
 
-| Файл | Что это |
+Windows 10/11, 64-bit — see the [releases](../../releases) page.
+
+| File | What it is |
 |---|---|
-| `…-with-ffmpeg-setup.exe` | Установщик с FFmpeg — проще всего, прав администратора не нужно |
-| `…-without-ffmpeg-setup.exe` | Установщик без FFmpeg — если FFmpeg уже есть |
-| `…-with-ffmpeg.zip` | Без установки, с FFmpeg: распаковать и запустить |
-| `…-without-ffmpeg.zip` | Без установки и без FFmpeg — самый лёгкий |
+| `…-with-ffmpeg-setup.exe` | Installer with FFmpeg — the easiest option, no admin rights needed |
+| `…-without-ffmpeg-setup.exe` | Installer without FFmpeg — if you already have FFmpeg |
+| `…-with-ffmpeg.zip` | Portable, with FFmpeg: unzip and run |
+| `…-without-ffmpeg.zip` | Portable, without FFmpeg — the smallest |
 
-Из архива программа запускается сразу; переносить нужно **всю папку**
-(рядом с exe лежит `_internal`).
+The portable version runs straight from the archive; move the **whole
+folder** (the `_internal` folder next to the exe is required).
 
-**SmartScreen** («Система Windows защитила ваш компьютер»): программа
-без цифровой подписи. Нажмите «Подробнее» → «Выполнить в любом случае».
+**SmartScreen** ("Windows protected your PC"): the app has no digital
+signature. Click "More info" → "Run anyway".
 
-**Без FFmpeg** работают только картинки (JPG, PNG, WEBP, BMP, AVIF).
-Для видео, GIF, стикеров и звука положите `ffmpeg.exe` и `ffprobe.exe`
-рядом с `DTTConvert.exe` или установите FFmpeg в `PATH`
-([сборки для Windows](https://www.gyan.dev/ffmpeg/builds/)).
+**Without FFmpeg** only images work (JPG, PNG, WEBP, BMP, AVIF). For video,
+GIF, stickers and audio, put `ffmpeg.exe` and `ffprobe.exe` next to
+`DTTConvert.exe` or install FFmpeg into `PATH`
+([Windows builds](https://www.gyan.dev/ffmpeg/builds/)).
 
-## Что умеет
+## Features
 
-- **На входе:** JPG, PNG, APNG, WEBP, BMP, AVIF, HEIC, TIFF, GIF, видео
-  (MP4, WebM, AVI, MOV, MKV и др.) и анимированные стикеры Telegram `.tgs`.
-  Анимированные WEBP, AVIF и APNG узнаются по содержимому.
-- **На выходе:** JPG, PNG, WEBP, BMP, AVIF, GIF, APNG, MP4, WebM, AVI,
-  звук (MP3, M4A, WAV) и покадровый разбор в PNG.
-- **Пресеты площадок** — см. таблицу ниже. Предпросмотр показывает
-  результат прямо в макете чата Telegram, Twitch, Discord и WhatsApp.
-- **Правка:** размер, частота кадров, обрезка по времени, поворот,
-  отражение, качество, ограничение веса файла, звук оставить или убрать.
-  «Заполнить квадрат» обрезает края вместо прозрачных полей.
-- **Очередь:** перетаскивание файлов и папок, вставка из буфера (`Ctrl+V`),
-  свои настройки у каждого файла, параллельная обработка, отчёт в CSV.
-  Исходник никогда не перезаписывается.
-- **Клавиши:** `Ctrl+O` — добавить, `Delete` — убрать, `Alt+↑/↓` — порядок,
-  `Ctrl+Enter` — старт, `Esc` — стоп. Всё окно проходится через `Tab`.
+- **Input:** JPG, PNG, APNG, WEBP, BMP, AVIF, HEIC, TIFF, GIF, video
+  (MP4, WebM, AVI, MOV, MKV and more) and Telegram animated stickers `.tgs`.
+  Animated WEBP, AVIF and APNG are detected by their contents.
+- **Output:** JPG, PNG, WEBP, BMP, AVIF, GIF, APNG, MP4, WebM, AVI,
+  audio (MP3, M4A, WAV) and frame-by-frame PNG export.
+- **Platform presets** — see the table below. The preview shows the result
+  right inside a Telegram, Twitch, Discord or WhatsApp chat mock-up.
+- **Editing:** resize, frame rate, trim, rotate, flip, quality, file size
+  limit, keep or drop audio. "Fill the square" crops the edges instead of
+  adding transparent margins.
+- **Queue:** drag and drop files and folders, paste from the clipboard
+  (`Ctrl+V`), per-file settings, parallel processing, CSV report.
+  The source file is never overwritten.
+- **Shortcuts:** `Ctrl+O` — add, `Delete` — remove, `Alt+↑/↓` — reorder,
+  `Ctrl+Enter` — start, `Esc` — stop. The whole window works with `Tab`.
 
-## Требования площадок
+## Platform requirements
 
-| Площадка | Пресет | Формат и лимиты |
+| Platform | Preset | Format and limits |
 |---|---|---|
-| Telegram | Стикер | PNG/WEBP, сторона 512 px; видео — WEBM/VP9, ≤ 3 с, ≤ 30 FPS, ≤ 256 КБ, без звука |
-| Telegram | Эмодзи | PNG/WEBP 100×100; видео — WEBM, те же лимиты |
-| Discord | Стикер | PNG или APNG 320×320, ≤ 512 КБ, анимация ≤ 5 с |
-| Discord | Эмодзи | PNG или GIF 128×128, ≤ 256 КБ |
-| Twitch | Смайлик | PNG/GIF 112×112 или комплект 28/56/112, ≤ 1 МБ, GIF ≤ 60 кадров |
-| Twitch | Значок подписки, баллы | PNG, комплекты 18/36/72 и 28/56/112, каждый ≤ 25 КБ |
-| 7TV / BTTV | Смайлик | WEBP/GIF или PNG, 128 / 112 px, ≤ 1 МБ |
-| WhatsApp | Стикер | WEBP 512×512, ≤ 100 КБ; анимация ≤ 10 с, ≤ 500 КБ; иконка набора PNG 96×96 |
+| Telegram | Sticker | PNG/WEBP, one side 512 px; video — WEBM/VP9, ≤ 3 s, ≤ 30 FPS, ≤ 256 KB, no audio |
+| Telegram | Emoji | PNG/WEBP 100×100; video — WEBM, same limits |
+| Discord | Sticker | PNG or APNG 320×320, ≤ 512 KB, animation ≤ 5 s |
+| Discord | Emoji | PNG or GIF 128×128, ≤ 256 KB |
+| Twitch | Emote | PNG/GIF 112×112 or a 28/56/112 set, ≤ 1 MB, GIF ≤ 60 frames |
+| Twitch | Sub badge, channel points | PNG, 18/36/72 and 28/56/112 sets, each ≤ 25 KB |
+| 7TV / BTTV | Emote | WEBP/GIF or PNG, 128 / 112 px, ≤ 1 MB |
+| WhatsApp | Sticker | WEBP 512×512, ≤ 100 KB; animated ≤ 10 s, ≤ 500 KB; pack icon PNG 96×96 |
 
-Стикер `.tgs` переводится в любой из этих форматов, в GIF и видео; обратно
-в `.tgs` перевести нельзя — это векторный формат.
+A `.tgs` sticker converts to any of these formats, to GIF and to video;
+converting back to `.tgs` is not possible — it is a vector format.
 
-## Запуск из исходников
+## Running from source
 
 Python 3.9+:
 
@@ -73,38 +77,38 @@ pip install -r requirements.txt
 python main.py
 ```
 
-`pillow-heif` нужен только для HEIC, `rlottie-python` — только для `.tgs`.
+`pillow-heif` is only needed for HEIC, `rlottie-python` only for `.tgs`.
 
-Тесты (для `test_core` нужен FFmpeg; окна на экран не выводятся):
+Tests (`test_core` needs FFmpeg; no windows appear on screen):
 
 ```bash
 python tests/run_all.py
 ```
 
-Сборка для Windows (нужен [PyInstaller](https://pyinstaller.org/); для
-установщиков — [Inno Setup 6](https://jrsoftware.org/isdl.php)):
+Windows build (needs [PyInstaller](https://pyinstaller.org/); installers
+also need [Inno Setup 6](https://jrsoftware.org/isdl.php)):
 
 ```powershell
-powershell -File build_windows.ps1              # архивы с FFmpeg и без в release\
-powershell -File build_windows.ps1 -Installer   # плюс установщики
+powershell -File build_windows.ps1              # archives with and without FFmpeg in release\
+powershell -File build_windows.ps1 -Installer   # plus installers
 ```
 
-Ключи: `-Variant with-ffmpeg|without-ffmpeg`, `-FfmpegDir <папка>`, `-NoZip`.
-Вшиваемый FFmpeg сверяется с `ffmpeg_checksums.txt`.
+Options: `-Variant with-ffmpeg|without-ffmpeg`, `-FfmpegDir <folder>`, `-NoZip`.
+The bundled FFmpeg is checked against `ffmpeg_checksums.txt`.
 
-## Прочее
+## Other
 
-- **Журнал:** `%LOCALAPPDATA%\DTTConvert\logs\app.log` — двойной щелчок
-  по номеру версии открывает папку.
-- **Обновления:** раз в сутки программа спрашивает GitHub о новой версии и
-  показывает ссылку вместо номера версии; сама ничего не скачивает.
-  Отключается в меню номера версии (правый щелчок).
-- **История изменений** — в [CHANGELOG.md](CHANGELOG.md).
+- **Log:** `%LOCALAPPDATA%\DTTConvert\logs\app.log` — double-click the
+  version number to open the folder.
+- **Updates:** once a day the app asks GitHub about a new version and shows
+  a link in place of the version number; it never downloads anything by
+  itself. Turn it off in the version number menu (right-click).
+- **Changelog** — [CHANGELOG.md](CHANGELOG.md) (in Russian).
 
-## Лицензии
+## Licenses
 
-Код — [MIT](LICENSE). FFmpeg во вшитой сборке — LGPL/GPL, его лицензия
-лежит рядом с exe (`FFmpeg-LICENSE`). Стикеры `.tgs` рисует
+Code — [MIT](LICENSE). FFmpeg in the bundled build is LGPL/GPL; its license
+sits next to the exe (`FFmpeg-LICENSE`). `.tgs` stickers are rendered by
 [rlottie-python](https://github.com/laggykiller/rlottie-python) (LGPL 2.1):
-его `rlottie.dll` — отдельный заменяемый файл в `_internal\rlottie_python`,
-лицензия — `rlottie-python-LICENSE.txt` рядом с exe.
+its `rlottie.dll` is a separate, replaceable file in `_internal\rlottie_python`,
+and the license is `rlottie-python-LICENSE.txt` next to the exe.
