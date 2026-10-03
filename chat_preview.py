@@ -23,6 +23,11 @@ from i18n import tr
 PREVIEW_MIN_HEIGHT = 64
 PREVIEW_MAX_HEIGHT = 170
 PADDING = 12
+# Мелкие подписи сцены («крупно», «кадр из видео», время сообщения).
+# Было 10 px — на тёмном фоне чата они читались с трудом.
+CAPTION_PX = 11
+# Высота строки под подписью «крупно».
+CAPTION_HEIGHT = 16
 
 # Цвета сцен — из тёмных тем самих площадок, чтобы макет узнавался.
 SCENES = {
@@ -31,10 +36,15 @@ SCENES = {
     "discord": {"bg": "#313338", "panel": "#2b2d31", "text": "#dbdee1",
                 "muted": "#949ba4", "name": "#f0b232", "accent": "#5865f2"},
     "telegram": {"bg": "#0e1621", "panel": "#182533", "text": "#f5f5f5",
-                 "muted": "#6d7f8f", "name": "#64b5ef", "accent": "#2ea6ff"},
+                 # Приглушённый текст светлее, чем в самом Telegram: #6d7f8f
+                 # давал 3,8 на пузыре сообщения — меньше AA.
+                 "muted": "#8597a8", "name": "#64b5ef", "accent": "#2ea6ff"},
     "whatsapp": {"bg": "#0b141a", "panel": "#202c33", "text": "#e9edef",
                  "muted": "#8696a0", "name": "#25d366", "accent": "#00a884"},
 }
+
+# Прозрачность макета, пока пресет площадки не выбран.
+INACTIVE_OPACITY = 0.3
 
 SHAPE_SQUARE = "square"
 SHAPE_STICKER = "sticker"
@@ -95,6 +105,7 @@ class ChatPreview(QWidget):
         self._code = ""
         self._fill = False
         self._transform = (0, False, False)
+        self._active = True
         self._cache = {}
         self.setMinimumHeight(PREVIEW_MIN_HEIGHT)
         self.setMaximumHeight(PREVIEW_MAX_HEIGHT)
@@ -115,6 +126,14 @@ class ChatPreview(QWidget):
         self._fill = bool(fill)
         self._cache.clear()
         self.update()
+
+    def set_active(self, active):
+        """Приглушает макет, пока пресет площадки не выбран: на выходе будет
+        обычный формат, и показывать «вот так это будет в чате» нечестно."""
+        active = bool(active)
+        if active != self._active:
+            self._active = active
+            self.update()
 
     def set_transform(self, rotate, flip_horizontal, flip_vertical):
         value = (int(rotate) % 360, bool(flip_horizontal), bool(flip_vertical))
@@ -231,6 +250,8 @@ class ChatPreview(QWidget):
             painter.end()
             return
 
+        if not self._active:
+            painter.setOpacity(INACTIVE_OPACITY)
         paint = {
             "twitch": self._paint_twitch,
             "discord": self._paint_discord,
@@ -241,7 +262,7 @@ class ChatPreview(QWidget):
 
         if self._is_video:
             painter.setPen(QColor(scene["muted"]))
-            painter.setFont(self._font(10))
+            painter.setFont(self._font(CAPTION_PX))
             painter.drawText(rect.adjusted(0, 0, -8, -5),
                              int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom),
                              tr("preview_video_note"))
@@ -255,7 +276,7 @@ class ChatPreview(QWidget):
 
     def _zoom_tile(self, painter, rect, scene, size, shape=SHAPE_SQUARE):
         """Крупный вариант справа: виден рисунок целиком, с полями или обрезкой."""
-        side = int(min(size, rect.height() - PADDING * 2 - 14))
+        side = int(min(size, rect.height() - PADDING * 2 - CAPTION_HEIGHT))
         if side < 24:
             return rect.right()
         x = rect.right() - PADDING - side
@@ -266,8 +287,8 @@ class ChatPreview(QWidget):
                            int(y + (side - pixmap.height() / pixmap.devicePixelRatio()) / 2),
                            pixmap)
         painter.setPen(QColor(scene["muted"]))
-        painter.setFont(self._font(10))
-        painter.drawText(QRectF(x - 10, y + side + 2, side + 20, 14),
+        painter.setFont(self._font(CAPTION_PX))
+        painter.drawText(QRectF(x - 10, y + side + 2, side + 20, CAPTION_HEIGHT),
                          int(Qt.AlignmentFlag.AlignHCenter), tr("preview_zoom"))
         return x - 12
 
@@ -326,7 +347,7 @@ class ChatPreview(QWidget):
         x_after = self._draw_text(painter, x, y + 13, tr("preview_user"), scene["name"],
                                   name_font)
         self._draw_text(painter, x_after + 8, y + 13, tr("preview_today"), scene["muted"],
-                        self._font(10))
+                        self._font(CAPTION_PX))
         available = rect.bottom() - PADDING - (y + 22)
         if sticker:
             side = int(min(160, available))
@@ -343,7 +364,7 @@ class ChatPreview(QWidget):
         self._zoom_tile(painter, rect, scene, 128)
 
     def _time_pill(self, painter, x, y, scene):
-        font = self._font(10)
+        font = self._font(CAPTION_PX)
         text = "12:00"
         width = QFontMetrics(font).horizontalAdvance(text) + 10
         painter.setPen(Qt.PenStyle.NoPen)

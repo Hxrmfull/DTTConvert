@@ -9,13 +9,18 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QEvent,
     QObject,
+    QPoint,
+    QPointF,
     QPropertyAnimation,
     QRectF,
+    QSize,
     Qt,
     pyqtProperty,
+    pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QPainter, QPalette, QPen
-from PyQt6.QtWidgets import QAbstractButton, QCheckBox, QStyledItemDelegate
+from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
+from PyQt6.QtWidgets import (QAbstractButton, QCheckBox, QLabel, QStyle,
+                             QStyledItemDelegate, QStyleOptionViewItem)
 
 from styles import palette
 
@@ -40,6 +45,7 @@ def toggle_colors(colors):
         "knob_disabled": colors["faint_text"],
         "text": colors["check_text"],
         "text_disabled": colors["faint_text"],
+        "focus": colors["focus_ring"],
     }
 
 
@@ -53,6 +59,9 @@ class ToggleSwitch(QCheckBox):
         # цвета темы он получает через set_palette.
         self._colors = toggle_colors(palette())
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Фокус только с клавиатуры: после щелчка мышью рамка фокуса
+        # оставалась бы на тумблере и выглядела как ещё одно состояние.
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self._animation = QPropertyAnimation(self, b"offset", self)
         self._animation.setDuration(140)
         self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
@@ -84,6 +93,11 @@ class ToggleSwitch(QCheckBox):
         width = TRACK_WIDTH + (TEXT_GAP + metrics.horizontalAdvance(self.text())
                                if self.text() else 0)
         return base.expandedTo(base.__class__(width, max(TRACK_HEIGHT + 4, base.height())))
+
+    def minimumSizeHint(self):
+        # Подпись тумблера не сокращается: в тесной строке внизу окна
+        # «Перезаписывать существующие файлы» обрезалось до «Перезаписывать су».
+        return self.sizeHint()
 
     def hitButton(self, pos):
         # Кликабельна вся строка, а не только сама дорожка.
@@ -120,10 +134,18 @@ class ToggleSwitch(QCheckBox):
             border_color = colors["track_off_border"]
             knob_color = colors["knob_off"]
 
-        painter.setPen(QPen(QColor(border_color), 1))
-        painter.setBrush(QColor(track_color))
         radius = TRACK_HEIGHT / 2
-        painter.drawRoundedRect(track.adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+        # Фокус клавиатуры — белая обводка дорожки в 2 px. Снаружи кольцу
+        # места нет: дорожка начинается у самого края виджета, а расширять
+        # тумблер нельзя — это сдвинуло бы вёрстку вкладок.
+        if self.hasFocus():
+            painter.setPen(QPen(QColor(colors["focus"]), 2))
+            outline = track.adjusted(1, 1, -1, -1)
+        else:
+            painter.setPen(QPen(QColor(border_color), 1))
+            outline = track.adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setBrush(QColor(track_color))
+        painter.drawRoundedRect(outline, radius, radius)
 
         diameter = TRACK_HEIGHT - KNOB_MARGIN * 2
         travel = TRACK_WIDTH - diameter - KNOB_MARGIN * 2
@@ -141,6 +163,72 @@ class ToggleSwitch(QCheckBox):
                 self.text(),
             )
         painter.end()
+
+
+class ElidedLabel(QLabel):
+    """Однострочная подпись, которая сокращается многоточием, а не
+    распирает строку.
+
+    text() возвращает полный текст, а не сокращённый: на него опираются
+    тесты и экранный диктор. Полный текст показывается и в подсказке, пока
+    подпись сокращена. Нужна для строки состояния внизу окна: итог
+    обработки с кнопками «Открыть папку» и «Отчёт» туда не помещался и
+    обрезался на полуслове, вместе с тумблером перезаписи.
+    """
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._own_tooltip = ""
+
+    def setToolTip(self, text):
+        self._own_tooltip = text
+        super().setToolTip(text)
+
+    def minimumSizeHint(self):
+        # Ширину отдаём соседям: сокращённая подпись лучше обрезанной кнопки.
+        hint = super().minimumSizeHint()
+        return QSize(self.fontMetrics().horizontalAdvance("…") * 4, hint.height())
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        rect = self.contentsRect()
+        full = self.text()
+        elided = self.fontMetrics().elidedText(full, Qt.TextElideMode.ElideRight,
+                                               rect.width())
+        # Подсказка с полным текстом — только пока он не виден целиком.
+        QLabel.setToolTip(self, full if elided != full else self._own_tooltip)
+        self.style().drawItemText(
+            painter, rect, int(self.alignment()), self.palette(), self.isEnabled(),
+            elided, QPalette.ColorRole.WindowText)
+        painter.end()
+
+
+class MenuLabel(QLabel):
+    """Подпись с контекстным меню, до которого можно добраться с клавиатуры.
+
+    Номер версии открывает папку журнала двойным щелчком, а меню —
+    правым. Мышью это работало, с клавиатуры — нет: подпись не брала
+    фокус. Теперь до неё доходит Tab, а Enter, пробел, клавиша меню или
+    Shift+F10 открывают то же меню.
+    """
+
+    menuRequested = pyqtSignal(QPoint)
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.menuRequested)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        shift_f10 = (key == Qt.Key.Key_F10
+                     and event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space,
+                   Qt.Key.Key_Menu) or shift_f10:
+            self.menuRequested.emit(self.rect().center())
+            return
+        super().keyPressEvent(event)
 
 
 class ButtonCursorFilter(QObject):
@@ -197,23 +285,59 @@ class GroupHeaderDelegate(QStyledItemDelegate):
                 option.palette.setColor(group, role, self._header_color)
 
 
-class StatusDotDelegate(QStyledItemDelegate):
-    """Рисует цветную точку состояния справа в строке очереди.
+# Части подписи строки очереди: имя файла, хвост «(длительность) → формат»
+# и подробность (процент или текст ошибки). Строку целиком держит обычный
+# текст элемента — его читают тесты и экранный диктор, а делегат по этим
+# частям решает, что сокращать, когда строка не помещается.
+ITEM_PARTS_ROLE = Qt.ItemDataRole.UserRole + 1
 
-    Раньше состояние было текстом в скобках — цвет считывается быстрее.
+
+def fit_item_text(metrics, available, name, tail, extra=""):
+    """Подпись строки очереди в заданную ширину.
+
+    Сокращается в первую очередь подробность (справа), потом имя файла —
+    посередине, чтобы остались и начало, и расширение. Хвост «→ формат»
+    не трогается: ради него строку и читают. Горизонтальной прокрутки у
+    очереди нет — раньше длинное имя уводило за край и формат, и точку
+    состояния.
+    """
+    full = name + tail + extra
+    if metrics.horizontalAdvance(full) <= available:
+        return full
+    tail_width = metrics.horizontalAdvance(tail)
+    min_name = min(metrics.horizontalAdvance(name), metrics.averageCharWidth() * 18)
+    if extra:
+        room = available - tail_width - min_name
+        extra = metrics.elidedText(extra, Qt.TextElideMode.ElideRight, max(0, room))
+    room = available - tail_width - metrics.horizontalAdvance(extra)
+    name = metrics.elidedText(name, Qt.TextElideMode.ElideMiddle, max(0, room))
+    text = name + tail + extra
+    if metrics.horizontalAdvance(text) > available:
+        text = metrics.elidedText(text, Qt.TextElideMode.ElideRight, available)
+    return text
+
+
+class StatusDotDelegate(QStyledItemDelegate):
+    """Рисует строку очереди и значок состояния у её правого края.
+
+    Раньше состояние было текстом в скобках — значок считывается быстрее.
+    Значки различаются не только цветом, но и формой: «готово» и
+    «ожидание» при нарушениях цветового зрения иначе не различить.
     """
 
     # Состояние → роль цвета в палитре. Прерванный файл — не ошибка
     # и не успех, поэтому у него отдельный цвет.
     STATUS_ROLES = {
         "Ожидание": "status_pending",
-        "Обработка": "accent",
+        "Обработка": "status_processing",
         "Готово": "status_done",
         "Ошибка": "status_error",
         "Остановлено": "status_stopped",
     }
     DOT_RADIUS = 5
     RIGHT_PADDING = 16
+    # Место под значок справа от текста: сам значок и зазор до подписи.
+    STATUS_COLUMN = 22
 
     def __init__(self, status_of, parent=None):
         super().__init__(parent)
@@ -222,22 +346,69 @@ class StatusDotDelegate(QStyledItemDelegate):
         self._colors = {status: colors[role] for status, role in self.STATUS_ROLES.items()}
 
     def sizeHint(self, option, index):
+        # Ширина строки — не по тексту, а минимальная: тогда список растягивает
+        # строки ровно на свою ширину и не заводит горизонтальную прокрутку.
         size = super().sizeHint(option, index)
-        size.setWidth(size.width() + self.DOT_RADIUS * 2 + self.RIGHT_PADDING)
-        return size
+        return QSize(1, size.height())
 
     def paint(self, painter, option, index):
-        super().paint(painter, option, index)
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        parts = index.data(ITEM_PARTS_ROLE)
+        widget = opt.widget
+        style = widget.style() if widget is not None else None
+        if parts and style is not None:
+            text_rect = style.subElementRect(
+                QStyle.SubElement.SE_ItemViewItemText, opt, widget)
+            available = text_rect.width() - self.STATUS_COLUMN
+            opt.text = fit_item_text(opt.fontMetrics, available, *parts)
+        if style is not None:
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+        else:
+            super().paint(painter, option, index)
         status = self._status_of(index)
         color = self._colors.get(status)
         if color is None:
             return
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(color))
-        centre_x = option.rect.right() - self.RIGHT_PADDING
-        centre_y = option.rect.center().y() + 1
-        r = self.DOT_RADIUS
-        painter.drawEllipse(QRectF(centre_x - r, centre_y - r, r * 2, r * 2))
+        centre = QPointF(option.rect.right() - self.RIGHT_PADDING,
+                         option.rect.center().y() + 1)
+        self._draw_status_mark(painter, status, centre, QColor(color))
         painter.restore()
+
+    def _draw_status_mark(self, painter, status, centre, color):
+        r = self.DOT_RADIUS
+        if status == "Готово":
+            pen = QPen(color, 2.2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            path = QPainterPath(QPointF(centre.x() - r, centre.y()))
+            path.lineTo(centre.x() - r * 0.3, centre.y() + r * 0.7)
+            path.lineTo(centre.x() + r, centre.y() - r * 0.8)
+            painter.drawPath(path)
+        elif status == "Ошибка":
+            pen = QPen(color, 2.2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            d = r * 0.8
+            painter.drawLine(QPointF(centre.x() - d, centre.y() - d),
+                             QPointF(centre.x() + d, centre.y() + d))
+            painter.drawLine(QPointF(centre.x() - d, centre.y() + d),
+                             QPointF(centre.x() + d, centre.y() - d))
+        elif status == "Остановлено":
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(color)
+            side = r * 1.6
+            painter.drawRoundedRect(QRectF(centre.x() - side / 2, centre.y() - side / 2,
+                                           side, side), 1.5, 1.5)
+        elif status == "Ожидание":
+            # Пустое кольцо: файл ещё не трогали.
+            painter.setPen(QPen(color, 1.6))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(centre, r - 0.8, r - 0.8)
+        else:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(color)
+            painter.drawEllipse(centre, r, r)

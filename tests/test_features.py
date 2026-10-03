@@ -30,6 +30,8 @@ QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.StandardButton.O
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
 
 from main_window import MainWindow
+# Подтверждения окно задаёт своим _confirm («<действие> / Отмена»).
+MainWindow._confirm = lambda self, *a, **k: True
 from app_info import version_string, APP_NAME, APP_VERSION, ORGANIZATION
 from widgets import StatusDotDelegate
 
@@ -345,21 +347,56 @@ check("темы вкладок площадок: цвета меняются, в
 
 def t_theme_contrast():
     from styles import palette, contrast_ratio, THEMES
+    from chat_preview import SCENES
+    # Текст в правой панели — во всех темах (она перекрашивается под вкладку).
     pairs = [("text", "surface"), ("button_text", "button_bg"),
              ("bright_text", "selected_bg"), ("callout_text", "callout_bg"),
              ("tab_text", "tab_bg"), ("caption_text", "surface"),
              ("check_text", "surface"), ("bright_text", "primary_bg"),
-             ("text", "popup_bg")]
+             ("text", "popup_bg"), ("note_text", "surface"), ("hint_text", "surface"),
+             ("button_text", "button_hover_bg"), ("button_text", "quiet_bg")]
+    # Очередь и низ окна всегда в основной теме — их пары только для неё.
+    main_pairs = [("bright_text", "start_bg"), ("bright_text", "start_hover"),
+                  ("stop_text", "stop_bg"), ("note_text", "window_bg"),
+                  ("hint_text", "window_bg"), ("section_text", "window_bg"),
+                  ("drop_text", "surface"), ("format_header", "popup_bg"),
+                  ("muted_text", "sunken_bg"), ("accent_bright", "window_bg"),
+                  ("warning_text", "window_bg")]
+    # Границы и значки (WCAG 1.4.11): поле и выключенный тумблер узнаются
+    # только по рамке, поэтому нужно хотя бы 3:1 к фону карточки.
+    graphics = [("input_border", "surface"), ("check_border", "surface"),
+                ("accent_bright", "surface"), ("focus_ring", "button_bg"),
+                ("focus_ring", "selected_bg")]
+    main_graphics = [("drop_border", "surface"), ("status_pending", "surface"),
+                     ("status_done", "surface"), ("status_error", "surface"),
+                     ("status_stopped", "surface"), ("status_processing", "surface")]
     problems = []
+
+    def need(colors, theme, fg, bg, minimum):
+        ratio = contrast_ratio(colors[fg], colors[bg])
+        if ratio < minimum:
+            problems.append(f"{theme}: {fg} на {bg} = {ratio:.2f} < {minimum}")
+
     for theme in THEMES:
         colors = palette(theme)
         for fg, bg in pairs:
-            ratio = contrast_ratio(colors[fg], colors[bg])
-            if ratio < 4.5:
-                problems.append(f"{theme}: {fg} на {bg} = {ratio:.2f}")
-        ratio = contrast_ratio(colors["note_text"], colors["surface"])
-        if ratio < 4.5:
-            problems.append(f"{theme}: note_text на surface = {ratio:.2f}")
+            need(colors, theme, fg, bg, 4.5)
+        for fg, bg in graphics:
+            need(colors, theme, fg, bg, 3.0)
+    main = palette()
+    for fg, bg in main_pairs:
+        need(main, "main", fg, bg, 4.5)
+    for fg, bg in main_graphics:
+        need(main, "main", fg, bg, 3.0)
+    # Точка состояния видна и на выделенной строке очереди.
+    for role in ("status_pending", "status_done", "status_error", "status_stopped",
+                 "status_processing"):
+        need(main, "main", role, "selected_bg", 3.0)
+    # Сцены предпросмотра: подписи и текст сообщений на фоне чата и пузыря.
+    for name, scene in SCENES.items():
+        for fg in ("text", "muted", "name"):
+            for bg in ("bg", "panel"):
+                need(scene, f"сцена {name}", fg, bg, 4.5)
     assert not problems, problems
 check("контраст текста во всех темах не ниже WCAG AA", t_theme_contrast)
 
@@ -489,21 +526,18 @@ def t_twitch_long_warning():
     # FFmpeg окно находит по таймеру после старта — здесь зовём сразу.
     win._check_ffmpeg_status(quiet=True)
     asked = []
-    original = QMessageBox.question
-    QMessageBox.question = staticmethod(lambda *a, **k: (asked.append(a), QMessageBox.StandardButton.No)[1])
-    try:
-        job = ConversionJob(input_path=long_clip, output_dir=WORK,
-                            settings=JobSettings(output_format="twitch_animated_112"))
-        assert win._confirm_twitch_animation_length([job]) is False
-        assert asked, "предупреждение не показано"
-        trimmed = ConversionJob(input_path=long_clip, output_dir=WORK,
-                                settings=JobSettings(output_format="twitch_animated_112",
-                                                     trim_enabled=True, trim_start=0,
-                                                     trim_duration=3))
-        asked.clear()
-        assert win._confirm_twitch_animation_length([trimmed]) is True and not asked
-    finally:
-        QMessageBox.question = original
+    # Подмена только у этого окна: ответ «Отмена», вопрос запоминается.
+    win._confirm = lambda *a, **k: (asked.append(a), False)[1]
+    job = ConversionJob(input_path=long_clip, output_dir=WORK,
+                        settings=JobSettings(output_format="twitch_animated_112"))
+    assert win._confirm_twitch_animation_length([job]) is False
+    assert asked, "предупреждение не показано"
+    trimmed = ConversionJob(input_path=long_clip, output_dir=WORK,
+                            settings=JobSettings(output_format="twitch_animated_112",
+                                                 trim_enabled=True, trim_start=0,
+                                                 trim_duration=3))
+    asked.clear()
+    assert win._confirm_twitch_animation_length([trimmed]) is True and not asked
     win.close()
 check("предупреждение о длинной анимации для Twitch", t_twitch_long_warning)
 
@@ -525,6 +559,166 @@ def t_error_language_follows_ui():
     win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); app.processEvents()
     win.close()
 check("текст ошибки в очереди переводится при смене языка", t_error_language_follows_ui)
+
+
+# ---------- Разбор интерфейса: фокус, выключенные поля, очередь, низ окна ----------
+
+def _brightest(widget):
+    """Самый светлый цвет на снимке виджета — грубо, это цвет текста."""
+    image = widget.grab().toImage()
+    best = 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            best = max(best, image.pixelColor(x, y).lightness())
+    return best
+
+
+def _pixels_changed(widget, action):
+    before = widget.grab().toImage()
+    action(); settle(80)
+    after = widget.grab().toImage()
+    return sum(before.pixel(x, y) != after.pixel(x, y)
+               for y in range(before.height()) for x in range(before.width()))
+
+
+def t_focus_visible():
+    from PyQt6.QtCore import Qt as _Qt
+    win = MainWindow(); win.resize(1140, 790); win.show(); win.activateWindow(); settle(200)
+    win._on_scan_finished([img], []); settle(100)
+    targets = [win.start_button, win.format_combo, win.resize_checkbox,
+               win.overwrite_checkbox, win.tab_buttons[1]]
+    for widget in targets:
+        changed = _pixels_changed(widget,
+                                  lambda: widget.setFocus(_Qt.FocusReason.TabFocusReason))
+        if not widget.hasFocus():
+            continue  # окно не стало активным (свёрнут рабочий стол) — проверить нечем
+        assert changed > 20, f"фокус не виден: {widget.objectName() or type(widget).__name__}"
+    # Кнопки берут фокус только с клавиатуры, область прокрутки — никогда.
+    assert win.start_button.focusPolicy() == _Qt.FocusPolicy.TabFocus
+    from PyQt6.QtWidgets import QScrollArea
+    assert win.findChild(QScrollArea, "SettingsScroll").focusPolicy() == _Qt.FocusPolicy.NoFocus
+    win.close()
+check("фокус клавиатуры виден на кнопках, полях и тумблерах", t_focus_visible)
+
+
+def t_disabled_fields_look_disabled():
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    win.resize_checkbox.setChecked(False); settle(50)
+    assert not win.width_spin.isEnabled() and not win.width_label.isEnabled()
+    off_spin, off_label = _brightest(win.width_spin), _brightest(win.width_label)
+    win.resize_checkbox.setChecked(True); settle(50)
+    on_spin, on_label = _brightest(win.width_spin), _brightest(win.width_label)
+    assert on_spin - off_spin > 60, (on_spin, off_spin)
+    assert on_label - off_label > 60, (on_label, off_label)
+    # Тихая кнопка (#QuietButton) тоже гаснет: правило по имени перебивало
+    # общее :disabled. Очередь пуста — снимать отметки не с чего.
+    assert not win.uncheck_all_button.isEnabled()
+    quiet_off = _brightest(win.uncheck_all_button)
+    win._on_scan_finished([img], []); settle(50)
+    assert win.uncheck_all_button.isEnabled()
+    assert _brightest(win.uncheck_all_button) - quiet_off > 60
+    win.close()
+check("выключенное поле и его подпись выглядят выключенными", t_disabled_fields_look_disabled)
+
+
+def t_queue_row_fits():
+    from PyQt6.QtCore import QRect
+    from main_window import DATA_ROLE, STATUS_ERROR
+    from errors import LocalizedRuntimeError
+    long_name = os.path.join(WORK, "очень_длинное_имя_файла_для_проверки_очереди_" * 2 + ".png")
+    Image.new("RGB", (64, 64), (0, 120, 200)).save(long_name)
+    win = MainWindow(); win.resize(980, 680); win.show(); settle(100)
+    win._on_scan_finished([long_name, img], []); settle(100)
+    item = win.file_list.item(1)
+    entry = item.data(DATA_ROLE)
+    entry.status = STATUS_ERROR
+    entry.message = LocalizedRuntimeError("err_ffmpeg_failed", detail="x" * 300, code=1)
+    item.setData(DATA_ROLE, entry); win._refresh_item_text(item); settle(50)
+    assert win.file_list.horizontalScrollBar().maximum() == 0, "у очереди появилась прокрутка вбок"
+    viewport = win.file_list.viewport().width()
+    for row in range(win.file_list.count()):
+        rect = win.file_list.visualItemRect(win.file_list.item(row))
+        assert rect.right() <= viewport, (row, rect, viewport)
+    # Состояние словами — в подсказке, «Подробности ниже» в строке нет.
+    assert win.file_list.item(1).toolTip().startswith("Ошибка"), win.file_list.item(1).toolTip()
+    assert "ниже" not in win.file_list.item(1).text()
+    # Сокращение не трогает формат.
+    from widgets import fit_item_text
+    metrics = win.file_list.fontMetrics()
+    text = fit_item_text(metrics, 200, "а" * 80 + ".png", "  →  MP4", "   ·   ошибка " * 5)
+    assert text.endswith("…") or "→  MP4" in text, text
+    assert "→  MP4" in fit_item_text(metrics, 200, "а" * 80 + ".png", "  →  MP4"), "формат пропал"
+    win.close()
+check("строка очереди: без прокрутки вбок, формат и значок видны", t_queue_row_fits)
+
+
+def t_bottom_row_fits():
+    for language in ("ru", "en"):
+        win = MainWindow(); win.resize(980, 680); win.show(); settle(100)
+        win.language_combo.setCurrentIndex(win.language_combo.findData(language)); settle(100)
+        win.report_button.setVisible(True)
+        win.open_folder_button.setVisible(True)
+        win._on_update_found("9.9.9", "https://example.invalid")
+        win.current_file_label.setText("Обработка завершена — успешно: 10, с ошибкой: 2"
+                                       "   ·   заняло 12 мин 30 сек")
+        settle(100)
+        for widget in (win.overwrite_checkbox, win.update_button, win.open_folder_button,
+                       win.report_button, win.stop_button, win.start_button,
+                       win.language_combo):
+            assert widget.width() >= widget.sizeHint().width() - 1, \
+                (language, widget.text() if hasattr(widget, "text") else widget, widget.width(),
+                 widget.sizeHint().width())
+        assert not win.version_label.isVisible(), "ссылка на обновление должна заменить номер"
+        # Полный итог — в text() и в подсказке, даже если на экране сокращён.
+        assert "заняло" in win.current_file_label.text()
+        win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(50)
+        win.close()
+check("низ окна: при 980 px ничего не обрезано", t_bottom_row_fits)
+
+
+def t_numbers_and_plurals():
+    from i18n import number, plural, set_language
+    set_language("ru")
+    assert number(3.0) == "3" and number(3.5) == "3,5" and number(0.25) == "0,25"
+    assert [plural("word_files", n) for n in (1, 2, 5, 11, 21, 22, 112)] == \
+        ["файл", "файла", "файлов", "файлов", "файл", "файла", "файлов"]
+    set_language("en")
+    assert number(3.5) == "3.5" and plural("word_files", 1) == "file"
+    assert plural("word_files", 2) == "files"
+    set_language("ru")
+    from errors import LocalizedValueError
+    assert "3,25" in LocalizedValueError("err_duration_over", duration=3.25, limit=3.0).text()
+check("числа и склонения по языку интерфейса", t_numbers_and_plurals)
+
+
+def t_platform_tab_states():
+    from main_window import TAB_MAIN, TAB_TELEGRAM
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    win._on_scan_finished([img], []); win.file_list.setCurrentRow(0); settle(100)
+    win._set_selected_format("png")
+    win.settings_tabs.setCurrentIndex(TAB_TELEGRAM); settle(260)
+    # Пресет не выбран: выноска говорит об этом, предпросмотр приглушён.
+    assert "не выбран" in win.telegram_hint_label.text(), win.telegram_hint_label.text()
+    assert not win.chat_previews["telegram"]._active
+    # На площадке вместо кнопок применения — примечание той же высоты.
+    assert win.apply_stack.currentIndex() == 1
+    height_platform = win.apply_stack.height()
+    win._apply_telegram_preset("tg_sticker_png"); settle(50)
+    assert "512" in win.telegram_hint_label.text()
+    assert win.chat_previews["telegram"]._active
+    win.settings_tabs.setCurrentIndex(TAB_MAIN); settle(260)
+    assert win.apply_stack.currentIndex() == 0
+    assert win.apply_stack.height() == height_platform, "строка применения прыгает по высоте"
+    # Сообщение о пресете снимается при смене выделения, итог обработки — нет.
+    win.file_list.clearSelection(); settle(50)
+    assert win.current_file_label.text() == idle_status_text(), win.current_file_label.text()
+    win.close()
+
+
+def idle_status_text():
+    from main_window import idle_status
+    return idle_status()
+check("вкладки площадок: пресет не выбран, примечание вместо кнопок", t_platform_tab_states)
 
 w.grab().save(os.path.join(OUT, "features.png"))
 # Закрываем окно: иначе фоновые потоки доживают до выхода интерпретатора

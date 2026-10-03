@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QDoubleSpinBox,
     QAbstractButton,
+    QAbstractSpinBox,
     QLineEdit,
     QFileDialog,
     QProgressBar,
@@ -57,8 +58,8 @@ from PyQt6.QtWidgets import (
 from animation_info import animated_image_info
 from app_info import APP_NAME, ORGANIZATION, RELEASES_URL, version_string, window_title
 from updater import CHECK_INTERVAL_SEC, UpdateCheckWorker, is_newer
-from i18n import (LANGUAGE_NAMES, LANGUAGE_ORDER, current_language,
-                  language_from_locale, set_language, tr)
+from i18n import (ENGLISH, LANGUAGE_NAMES, LANGUAGE_ORDER, current_language,
+                  language_from_locale, number, plural, set_language, tr)
 from discord_utils import (
     DISCORD_PRESET_COLUMNS,
     discord_hint,
@@ -93,7 +94,10 @@ from telegram_utils import (
 )
 from widgets import (
     ButtonCursorFilter,
+    ElidedLabel,
     GroupHeaderDelegate,
+    ITEM_PARTS_ROLE,
+    MenuLabel,
     StatusDotDelegate,
     ToggleSwitch,
     apply_button_cursor,
@@ -291,6 +295,10 @@ def idle_status():
 # вкладке без прокрутки — запас около 20 px, так что новую строку настроек
 # просто так не добавить: сначала прогоните тест вёрстки.
 DEFAULT_WINDOW_SIZE = (1140, 790)
+
+# Названия площадок для подписей: не переводятся.
+PLATFORM_TITLES = {"telegram": "Telegram", "twitch": "Twitch",
+                   "discord": "Discord", "whatsapp": "WhatsApp"}
 
 
 @dataclass
@@ -592,6 +600,11 @@ class FileQueueList(QListWidget):
         self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setIconSize(QSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE))
+        # Без горизонтальной прокрутки: длинное имя сокращается посередине
+        # (см. StatusDotDelegate), а формат и значок состояния всегда видны.
+        # Adjust — строки перекладываются при изменении ширины окна.
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.on_files_dropped = on_files_dropped
         self.on_empty_clicked = on_empty_clicked
         self._placeholder_visible = True
@@ -707,6 +720,7 @@ class MainWindow(QMainWindow):
 
         self._loading_settings = False
         self._refreshing_items = False
+        self._transient_status = None
         # Выбранный формат живёт отдельно от активной вкладки: иначе переход
         # на «Правки» ради кадрирования сбрасывал бы пресет площадки.
         self._rebuilding = False
@@ -883,6 +897,13 @@ class MainWindow(QMainWindow):
 
         bottom_panel = self._build_bottom_panel()
         bottom_panel.setObjectName("BottomPanel")
+        # Дробная часть в полях — по языку интерфейса, а не по системе:
+        # в английском окне на русской Windows стояло «0,00 s», а в
+        # подписях рядом — «3.0 s».
+        locale = QLocale(QLocale.Language.English if current_language() == ENGLISH
+                         else QLocale.Language.Russian)
+        for spin in central.findChildren(QAbstractSpinBox):
+            spin.setLocale(locale)
         # Отбивка сверху: блок сохранения не должен липнуть к кнопкам очереди.
         root_layout.addSpacing(6)
         root_layout.addWidget(bottom_panel)
@@ -911,6 +932,10 @@ class MainWindow(QMainWindow):
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self._on_queue_context_menu)
         self.file_list.setItemDelegate(StatusDotDelegate(self._status_at_index, self.file_list))
+        # Перестановка мышью и Alt+↑/↓ нигде больше не упоминалась.
+        self.file_list.setToolTip(tr("queue_tip"))
+        self.file_list.setAccessibleName(tr("queue_title"))
+        self.file_list.setAccessibleDescription(tr("queue_tip"))
         layout.addWidget(self.file_list, stretch=1)
 
         # Обе строки кнопок — одна сетка, поэтому колонки совпадают по ширине.
@@ -944,6 +969,11 @@ class MainWindow(QMainWindow):
         uncheck_all_button.setObjectName("QuietButton")
         uncheck_all_button.setToolTip(tr("uncheck_all_tip"))
         uncheck_all_button.clicked.connect(lambda: self._set_all_checked(False))
+        # Гаснут, когда делать нечего: «Отметить все» при всех отмеченных.
+        self.check_all_button = check_all_button
+        self.uncheck_all_button = uncheck_all_button
+        self.remove_button = remove_button
+        self.clear_button = clear_button
 
         # Сетка из 6 колонок: первый ряд — три кнопки, второй — две,
         # так оба ряда получаются одинаковой ширины без «висящих» кнопок.
@@ -960,6 +990,10 @@ class MainWindow(QMainWindow):
         «запрещено» у недоступной. Фильтр следит за сменой состояния."""
         self._cursor_filter = ButtonCursorFilter(self)
         for button in self.findChildren(QAbstractButton):
+            # Фокус кнопкам — только с клавиатуры. Рамку фокуса таблица стилей
+            # рисует белой, и после щелчка мышью она оставалась бы на кнопке,
+            # как будто это ещё одно состояние (в Qt нет :focus-visible).
+            button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             if isinstance(button, ToggleSwitch):
                 continue
             button.installEventFilter(self._cursor_filter)
@@ -1058,6 +1092,8 @@ class MainWindow(QMainWindow):
             tr("tg_duration_tip")
         )
         self.tg_duration_spin.valueChanged.connect(self._on_settings_changed)
+        self.tg_start_label.setBuddy(self.tg_start_spin)
+        self.tg_duration_label.setBuddy(self.tg_duration_spin)
         duration_layout.addWidget(self.tg_duration_label)
         duration_layout.addWidget(self.tg_duration_spin)
         self.tg_units_label = QLabel(tr("seconds_suffix").strip())
@@ -1148,31 +1184,39 @@ class MainWindow(QMainWindow):
         self.fill_toggles[platform] = fill_toggle
         layout.addWidget(fill_toggle)
 
-        note = QLabel(tr("platform_note"))
-        note.setObjectName("NoteLabel")
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        # Примечание «к выделенным, а без выделения — ко всем» живёт под
+        # карточкой, на месте кнопок применения (см. _build_right_panel):
+        # пресет применяется сразу, и кнопки на вкладках площадок были лишними.
 
         # Отдельной подписи у предпросмотра нет: макет чата узнаётся сам, а
         # строка заголовка не помещалась на вкладке Telegram с выбранным
         # видео — та и так самая тесная.
         preview = ChatPreview(platform)
         preview.setToolTip(tr("preview_title"))
+        preview.setAccessibleName(tr("preview_title"))
         self.chat_previews[platform] = preview
         layout.addWidget(preview, 1)
         # Пустота — после предпросмотра: когда он дорос до предела,
         # лишняя высота уходит сюда, а не в зазоры между строками.
         layout.addStretch(0)
 
+    def _confirm(self, title, text, action):
+        """Вопрос с кнопками «<действие>» и «Отмена» вместо «Да/Нет».
+
+        Стандартные кнопки Qt без его перевода выходили по-английски и в
+        русском окне, а «Да/Нет» заставляет перечитывать вопрос. По
+        умолчанию и по Esc — отмена: все вопросы здесь о рискованном шаге.
+        """
+        box = QMessageBox(QMessageBox.Icon.Question, title, text, parent=self)
+        accept = box.addButton(action, QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton(tr("btn_cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel)
+        box.setEscapeButton(cancel)
+        box.exec()
+        return box.clickedButton() is accept
+
     def _on_reset_settings(self):
-        answer = QMessageBox.question(
-            self,
-            tr("dlg_reset_title"),
-            tr("dlg_reset_text"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        if not self._confirm(tr("dlg_reset_title"), tr("dlg_reset_text"), tr("btn_reset")):
             return
         # Язык и проверка обновлений — не параметры обработки: сброс их не
         # трогает, иначе после перезапуска окно внезапно меняло бы язык.
@@ -1234,6 +1278,9 @@ class MainWindow(QMainWindow):
             button.setObjectName("TabButton")
             button.setCheckable(True)
             button.setToolTip(tip)
+            # Для диктора — «Вкладка Telegram», а не просто нажатая кнопка.
+            button.setAccessibleName(tr("tab_accessible", name=caption))
+            button.setAccessibleDescription(tip)
             # Выбранная вкладка рисуется жирнее, а sizeHint считается по
             # обычному начертанию — из-за этого «Дополнительно» обрезалось
             # ровно в тот момент, когда вкладка становилась активной.
@@ -1264,6 +1311,9 @@ class MainWindow(QMainWindow):
         settings_scroll.setWidgetResizable(True)
         settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
         settings_scroll.setObjectName("SettingsScroll")
+        # Сама область прокрутки — не элемент управления: без этого Tab
+        # останавливался на ней, и фокус пропадал из виду на один шаг.
+        settings_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         # Горизонтальная полоса как страховка: лучше прокрутка, чем обрезанный текст.
         settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         settings_scroll.setWidget(self.settings_tabs)
@@ -1293,14 +1343,32 @@ class MainWindow(QMainWindow):
         self.apply_selected_button.clicked.connect(self._apply_to_selected)
         self.apply_all_button = QPushButton(tr("apply_all"))
         self.apply_all_button.clicked.connect(self._apply_to_all)
+        # На вкладках площадок пресет применяется сразу по щелчку, поэтому
+        # вместо кнопок применения там примечание о том, к чему он применён.
+        # Стопка, а не скрытие: высота строки одна на всех вкладках, и
+        # вёрстка карточки при переключении не прыгает.
+        apply_buttons = QWidget()
+        apply_buttons_layout = QHBoxLayout(apply_buttons)
+        apply_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        apply_buttons_layout.addWidget(self.apply_selected_button, stretch=1)
+        apply_buttons_layout.addWidget(self.apply_all_button, stretch=1)
+        # Одна строка с многоточием, а не перенос: скрытая страница стопки
+        # с переносом считала себе высоту в две строки, и строка кнопок на
+        # «Основной» вырастала на 10 px — ровно из запаса по высоте.
+        self.platform_note_label = ElidedLabel(tr("platform_note"))
+        self.platform_note_label.setObjectName("ApplyNote")
+        self.platform_note_label.setAlignment(Qt.AlignmentFlag.AlignVCenter
+                                              | Qt.AlignmentFlag.AlignLeft)
+        self.apply_stack = QStackedWidget()
+        self.apply_stack.addWidget(apply_buttons)
+        self.apply_stack.addWidget(self.platform_note_label)
         self.reset_settings_button = QPushButton(tr("reset"))
         self.reset_settings_button.setObjectName("QuietButton")
         self.reset_settings_button.setToolTip(
             tr("reset_tip")
         )
         self.reset_settings_button.clicked.connect(self._on_reset_settings)
-        apply_layout.addWidget(self.apply_selected_button, stretch=1)
-        apply_layout.addWidget(self.apply_all_button, stretch=1)
+        apply_layout.addWidget(self.apply_stack, stretch=1)
         apply_layout.addWidget(self.reset_settings_button)
         # Отступ, чтобы кнопки не липли к нижней рамке карточки настроек.
         layout.addSpacing(4)
@@ -1322,8 +1390,11 @@ class MainWindow(QMainWindow):
         grid.setContentsMargins(4, 6, 4, 4)
         grid.setVerticalSpacing(5)
         grid.setHorizontalSpacing(10)
-        grid.addWidget(QLabel(tr("output_format")), 0, 0)
+        format_label = QLabel(tr("output_format"))
+        grid.addWidget(format_label, 0, 0)
         self.format_combo = QComboBox()
+        # Подпись — «приятель» поля: так её читает экранный диктор.
+        format_label.setBuddy(self.format_combo)
         self._fill_format_combo()
         self.format_combo.currentIndexChanged.connect(self._on_format_combo_changed)
         grid.addWidget(self.format_combo, 0, 1, 1, 3)
@@ -1335,14 +1406,18 @@ class MainWindow(QMainWindow):
         self.resize_checkbox = ToggleSwitch(tr("resize"))
         self.resize_checkbox.stateChanged.connect(self._on_resize_toggle)
         grid.addWidget(self.resize_checkbox, 2, 0, 1, 2)
-        grid.addWidget(QLabel(tr("width")), 3, 0)
+        self.width_label = QLabel(tr("width"))
+        grid.addWidget(self.width_label, 3, 0)
         self.width_spin = QSpinBox()
+        self.width_label.setBuddy(self.width_spin)
         self.width_spin.setRange(0, 10000)
         self.width_spin.setSpecialValueText(tr("auto"))
         self.width_spin.valueChanged.connect(self._on_settings_changed)
         grid.addWidget(self.width_spin, 3, 1)
-        grid.addWidget(QLabel(tr("height")), 3, 2)
+        self.height_label = QLabel(tr("height"))
+        grid.addWidget(self.height_label, 3, 2)
         self.height_spin = QSpinBox()
+        self.height_label.setBuddy(self.height_spin)
         self.height_spin.setRange(0, 10000)
         self.height_spin.setSpecialValueText(tr("auto"))
         self.height_spin.valueChanged.connect(self._on_settings_changed)
@@ -1359,6 +1434,7 @@ class MainWindow(QMainWindow):
         self.fps_spin = QSpinBox()
         self.fps_spin.setRange(1, 60)
         self.fps_spin.setValue(15)
+        self.fps_spin.setAccessibleName(tr("change_fps"))
         self.fps_spin.valueChanged.connect(self._on_settings_changed)
         grid.addWidget(self.fps_spin, 4, 2, 1, 2)
         # Обрезка по времени для видео и GIF — тем же тумблером, что размер и FPS.
@@ -1388,6 +1464,8 @@ class MainWindow(QMainWindow):
         self.trim_end_spin.setFixedWidth(86)
         self.trim_end_spin.setSuffix(tr("seconds_suffix"))
         self.trim_end_spin.valueChanged.connect(self._on_trim_changed)
+        self.trim_start_label.setBuddy(self.trim_start_spin)
+        self.trim_end_label.setBuddy(self.trim_end_spin)
         for widget in (self.trim_start_label, self.trim_start_spin,
                        self.trim_end_label, self.trim_end_spin):
             trim_row.addWidget(widget)
@@ -1407,6 +1485,7 @@ class MainWindow(QMainWindow):
         for caption, _degrees in rotate_options():
             self.rotate_combo.addItem(caption)
         self.rotate_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.rotate_label.setBuddy(self.rotate_combo)
         grid.addWidget(self.rotate_combo, 8, 1)
 
         self.flip_label = QLabel(tr("flip"))
@@ -1415,6 +1494,7 @@ class MainWindow(QMainWindow):
         for caption, _flags in flip_options():
             self.flip_combo.addItem(caption)
         self.flip_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.flip_label.setBuddy(self.flip_combo)
         grid.addWidget(self.flip_combo, 8, 3)
 
         quality_caption = QLabel(tr("group_quality"))
@@ -1430,6 +1510,7 @@ class MainWindow(QMainWindow):
         self.quality_spin = QSpinBox()
         self.quality_spin.setRange(1, 100)
         self.quality_spin.setValue(DEFAULT_QUALITY)
+        self.quality_spin.setAccessibleName(tr("set_quality"))
         self.quality_spin.valueChanged.connect(self._on_settings_changed)
         grid.addWidget(self.quality_spin, 10, 2, 1, 2)
 
@@ -1444,6 +1525,7 @@ class MainWindow(QMainWindow):
         self.target_size_spin.setSingleStep(0.5)
         self.target_size_spin.setValue(10.0)
         self.target_size_spin.setSuffix(tr("megabytes_suffix"))
+        self.target_size_spin.setAccessibleName(tr("target_size"))
         self.target_size_spin.valueChanged.connect(self._on_settings_changed)
         grid.addWidget(self.target_size_spin, 11, 2, 1, 2)
 
@@ -1455,6 +1537,7 @@ class MainWindow(QMainWindow):
             tr("audio_tip")
         )
         self.audio_combo.currentIndexChanged.connect(self._on_audio_changed)
+        self.audio_label.setBuddy(self.audio_combo)
         grid.addWidget(self.audio_combo, 12, 1)
         self.audio_bitrate_label = QLabel(tr("audio_bitrate"))
         grid.addWidget(self.audio_bitrate_label, 12, 2)
@@ -1463,6 +1546,7 @@ class MainWindow(QMainWindow):
             self.audio_bitrate_combo.addItem(tr("kbps", value=value))
         self.audio_bitrate_combo.setCurrentIndex(AUDIO_BITRATES.index(DEFAULT_AUDIO_BITRATE))
         self.audio_bitrate_combo.currentIndexChanged.connect(self._on_settings_changed)
+        self.audio_bitrate_label.setBuddy(self.audio_bitrate_combo)
         grid.addWidget(self.audio_bitrate_combo, 12, 3)
 
         grid.setRowStretch(13, 1)
@@ -1594,8 +1678,10 @@ class MainWindow(QMainWindow):
         layout.setSpacing(8)
 
         output_layout = QHBoxLayout()
-        output_layout.addWidget(QLabel(tr("output_dir")))
+        output_label = QLabel(tr("output_dir"))
+        output_layout.addWidget(output_label)
         self.output_dir_edit = QLineEdit(self.output_dir)
+        output_label.setBuddy(self.output_dir_edit)
         self.output_dir_edit.setReadOnly(True)
         self.output_dir_edit.setObjectName("ReadOnlyPath")
         self.output_dir_edit.setToolTip(tr("output_dir_tip"))
@@ -1613,7 +1699,9 @@ class MainWindow(QMainWindow):
             tr("overwrite_tip")
         )
 
-        self.current_file_label = QLabel(idle_status())
+        # Сокращается многоточием, а не распирает строку: итог обработки
+        # рядом с кнопками «Открыть папку» и «Отчёт» в неё не помещался.
+        self.current_file_label = ElidedLabel(idle_status())
         self.current_file_label.setObjectName("HintLabel")
 
         self.overall_progress_bar = QProgressBar()
@@ -1628,9 +1716,11 @@ class MainWindow(QMainWindow):
 
         self.start_button = QPushButton(tr("start"))
         self.start_button.setObjectName("StartButton")
+        self.start_button.setToolTip(tr("start_tip"))
         self.start_button.clicked.connect(self._on_start_clicked)
         self.stop_button = QPushButton(tr("stop"))
         self.stop_button.setObjectName("StopButton")
+        self.stop_button.setToolTip(tr("stop_off"))
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setEnabled(False)
 
@@ -1647,21 +1737,25 @@ class MainWindow(QMainWindow):
         action_row.addLayout(left_column, stretch=1)
 
         # Версия в углу: видно, какая сборка запущена, без лишнего места.
-        self.version_label = QLabel(f"v{version_string()}")
+        # Меню версии открывается и с клавиатуры (Tab, затем Enter).
+        self.version_label = MenuLabel(f"v{version_string()}")
         self.version_label.setObjectName("VersionLabel")
         self.version_label.setToolTip(
             tr("version_tip", app=APP_NAME, version=version_string())
         )
         self.version_label.mouseDoubleClickEvent = lambda _event: self._open_log_folder()
-        self.version_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.version_label.customContextMenuRequested.connect(self._on_version_menu)
+        self.version_label.menuRequested.connect(
+            lambda position: self._on_version_menu(position, self.version_label))
 
-        # Ссылка на новую версию: появляется, только если она вышла.
+        # Ссылка на новую версию: появляется, только если она вышла, и
+        # встаёт на место номера версии, а не рядом — строка и так тесная.
         self.update_button = QPushButton()
         self.update_button.setObjectName("UpdateButton")
-        self.update_button.setToolTip(tr("update_tip"))
         self.update_button.setVisible(False)
         self.update_button.clicked.connect(self._open_update_page)
+        self.update_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.update_button.customContextMenuRequested.connect(
+            lambda position: self._on_version_menu(position, self.update_button))
 
         self.open_folder_button = QPushButton(tr("open_folder"))
         self.open_folder_button.setToolTip(tr("open_folder_tip"))
@@ -1671,6 +1765,7 @@ class MainWindow(QMainWindow):
         # Язык рядом с версией: место редкого обращения, но на виду.
         self.language_combo = QComboBox()
         self.language_combo.setToolTip(tr("language_tip"))
+        self.language_combo.setAccessibleName(tr("language_tip"))
         for code in LANGUAGE_ORDER:
             self.language_combo.addItem(LANGUAGE_NAMES[code], code)
         index = self.language_combo.findData(current_language())
@@ -1850,6 +1945,11 @@ class MainWindow(QMainWindow):
             else:
                 self.queue_counter_label.setText(tr("queue_checked", checked=checked, total=total))
         self.file_list.set_placeholder_visible(total == 0)
+        checked = len(self._checked_rows()) if total else 0
+        self.check_all_button.setEnabled(checked < total)
+        self.uncheck_all_button.setEnabled(checked > 0)
+        self.clear_button.setEnabled(total > 0)
+        self.remove_button.setEnabled(bool(self.file_list.selectedItems()))
 
     def _set_item_thumbnail(self, item, path):
         """Ставит миниатюру из кэша или ставит файл в очередь на разбор.
@@ -2068,15 +2168,22 @@ class MainWindow(QMainWindow):
         code = entry.settings.output_format
         format_display = format_label(code)
         duration = self._duration_of(entry.input_path)
+        tail = f"  →  {format_display}"
         if duration:
-            name = f"{name}  ({self._format_duration(duration)})"
-        # Само состояние показывает цветная точка справа, в тексте оно
-        # остаётся только когда несёт подробности (процент или ошибка).
-        item.setText(f"{name}  →  {format_display}{suffix}")
+            tail = f"  ({self._format_duration(duration)})" + tail
+        # Само состояние показывает значок справа, в тексте оно остаётся
+        # только когда несёт подробности (процент или ошибка).
+        item.setText(f"{name}{tail}{suffix}")
+        # Части подписи — для делегата: он сокращает имя, а не формат.
+        item.setData(ITEM_PARTS_ROLE, (name, tail, suffix))
+        # Состояние словами — первой строкой подсказки: значок различается
+        # цветом и формой, но словами надёжнее.
+        status_line = tr(REPORT_STATUS_KEYS.get(status, "status_pending"))
         if status == STATUS_ERROR and entry.message:
-            item.setToolTip(tr("error_tooltip", message=message_text(entry.message)))
+            details = tr("error_tooltip", message=message_text(entry.message))
         else:
-            item.setToolTip(entry.input_path)
+            details = entry.input_path
+        item.setToolTip(f"{status_line}\n{details}")
         self._refreshing_items = False
 
     def _status_at_index(self, index):
@@ -2178,6 +2285,12 @@ class MainWindow(QMainWindow):
 
     def _on_selection_changed(self):
         selected_items = self.file_list.selectedItems()
+        self.remove_button.setEnabled(bool(selected_items))
+        # «Пресет применён к выделенным файлам: 1» относится к прежнему
+        # выделению — с новым оно только путает.
+        if (self._transient_status is not None and self.worker is None
+                and self.current_file_label.text() == self._transient_status):
+            self._set_status(idle_status())
         self._set_settings_enabled(len(selected_items) > 0)
         if not selected_items:
             self._refresh_previews()
@@ -2211,6 +2324,12 @@ class MainWindow(QMainWindow):
         for platform, preview in previews.items():
             preview.set_preset(codes[platform], fill)
             preview.set_transform(rotate, flip_h, flip_v)
+            # Без выбранного пресета предпросмотр приглушён: на выходе будет
+            # обычный формат, а не стикер или смайлик.
+            active = codes[platform] == self._selected_format
+            preview.set_active(active)
+            preview.setToolTip(tr("preview_title") if active
+                               else tr("preset_none_hint", platform=PLATFORM_TITLES[platform]))
 
         path = self._preview_path()
         if path == self._preview_shown_path:
@@ -2336,8 +2455,8 @@ class MainWindow(QMainWindow):
         else:
             self.tg_source_label.setText(
                 tr("tg_source_long", duration=self._format_duration(source),
-                   length=self.tg_duration_spin.value(),
-                   start=self.tg_start_spin.value())
+                   length=number(round(self.tg_duration_spin.value(), 1)),
+                   start=number(round(self.tg_start_spin.value(), 1)))
             )
 
     def _autofill_tg_duration(self, settings):
@@ -2356,7 +2475,9 @@ class MainWindow(QMainWindow):
             self._loading_settings = was_loading
 
     def _update_telegram_hint(self):
-        self.telegram_hint_label.setText(telegram_hint(self.telegram_format_code))
+        self._set_platform_hint("telegram", self.telegram_hint_label,
+                                telegram_hint(self.telegram_format_code),
+                                self.telegram_format_code, "Telegram")
         # У стикера Telegram одна сторона 512, другая — по пропорциям:
         # заполнять нечего, тумблер действует только на эмодзи.
         emoji = is_telegram_emoji_format(self.telegram_format_code)
@@ -2377,16 +2498,35 @@ class MainWindow(QMainWindow):
         self._sync_preset_buttons()
 
     def _update_twitch_hint(self):
-        self.twitch_hint_label.setText(twitch_hint(self.twitch_format_code))
+        self._set_platform_hint("twitch", self.twitch_hint_label,
+                                twitch_hint(self.twitch_format_code),
+                                self.twitch_format_code, "Twitch")
         self._sync_preset_buttons()
 
     def _update_discord_hint(self):
-        self.discord_hint_label.setText(discord_hint(self.discord_format_code))
+        self._set_platform_hint("discord", self.discord_hint_label,
+                                discord_hint(self.discord_format_code),
+                                self.discord_format_code, "Discord")
         self._sync_preset_buttons()
 
     def _update_whatsapp_hint(self):
-        self.whatsapp_hint_label.setText(whatsapp_hint(self.whatsapp_format_code))
+        self._set_platform_hint("whatsapp", self.whatsapp_hint_label,
+                                whatsapp_hint(self.whatsapp_format_code),
+                                self.whatsapp_format_code, "WhatsApp")
         self._sync_preset_buttons()
+
+    def _set_platform_hint(self, platform, label, hint, code, title):
+        """Выноска вкладки площадки.
+
+        Пока выбран обычный формат, выноска говорит, что пресет не выбран:
+        раньше она описывала пресет, который к файлу не применялся.
+        """
+        active = code == self._selected_format
+        text = hint if active else tr("preset_none_hint", platform=title)
+        label.setText(text)
+        preview = self.chat_previews.get(platform) if hasattr(self, "chat_previews") else None
+        if preview is not None:
+            preview.setAccessibleDescription(text)
 
     def _update_hints(self):
         self._update_telegram_hint()
@@ -2428,8 +2568,14 @@ class MainWindow(QMainWindow):
         """
         if not self._ui_ready:
             return
+        self._sync_apply_row()
         self._update_enabled_states()
         self._apply_tab_theme(animate=self.isVisible() and not self._rebuilding)
+
+    def _sync_apply_row(self):
+        """Кнопки применения — на «Основной», примечание — на площадках."""
+        on_main = self.settings_tabs.currentIndex() == TAB_MAIN
+        self.apply_stack.setCurrentIndex(0 if on_main else 1)
 
     def _apply_tab_theme(self, animate=False):
         """Красит панель настроек в цвета площадки открытой вкладки.
@@ -2613,13 +2759,19 @@ class MainWindow(QMainWindow):
         """Короткая обратная связь: пресет применяется молча, и без неё
         непонятно, затронул ли он что-нибудь."""
         if not count:
-            self.current_file_label.setText(
-                tr("preset_applied_none")
-            )
+            self._set_status(tr("preset_applied_none"), transient=True)
             return
         selected = bool(self.file_list.selectedItems())
         key = "preset_applied_selected" if selected else "preset_applied_all"
-        self.current_file_label.setText(tr(key, count=count))
+        self._set_status(tr(key, count=count), transient=True)
+
+    def _set_status(self, text, transient=False):
+        """Строка состояния внизу. Временное сообщение (о применённом
+        пресете) снимается при смене выделения, а итог обработки — нет."""
+        # Запоминается сам текст: если строку с тех пор переписал кто-то
+        # другой (ход обработки, итог), снимать её при смене выделения нельзя.
+        self._transient_status = text if transient else None
+        self.current_file_label.setText(text)
 
     def _apply_telegram_preset(self, format_code):
         self._set_selected_format(format_code)
@@ -2765,6 +2917,8 @@ class MainWindow(QMainWindow):
         self.resize_checkbox.setEnabled(has_picture and not platform)
         self.width_spin.setEnabled(resize)
         self.height_spin.setEnabled(resize)
+        self.width_label.setEnabled(resize)
+        self.height_label.setEnabled(resize)
         self.keep_aspect_checkbox.setEnabled(resize)
 
         # Частота кадров: у Twitch и Discord её подбирает сам обработчик
@@ -2851,7 +3005,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, tr("dlg_empty_queue_title"), tr("dlg_empty_queue_text"))
             return
         if not os.path.isdir(self.output_dir):
-            QMessageBox.warning(self, tr("dlg_bad_dir_title"), tr("dlg_bad_dir_text"))
+            QMessageBox.warning(self, tr("dlg_bad_dir_title"),
+                                tr("dlg_bad_dir_text", path=self.output_dir))
             return
         if not self._output_dir_writable():
             QMessageBox.warning(
@@ -2929,14 +3084,9 @@ class MainWindow(QMainWindow):
                 total += estimated
         if total <= FRAME_COUNT_WARNING_THRESHOLD:
             return True
-        answer = QMessageBox.question(
-            self,
-            tr("dlg_many_frames_title"),
-            tr("dlg_many_frames_text", count=total),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+        return self._confirm(tr("dlg_many_frames_title"),
+                             tr("dlg_many_frames_text", count=total),
+                             tr("btn_create_frames"))
 
     def _confirm_twitch_animation_length(self, jobs):
         """Предупреждает, если анимированный смайлик Twitch выйдет рваным.
@@ -2957,15 +3107,11 @@ class MainWindow(QMainWindow):
                 )
         if not long_files:
             return True
-        answer = QMessageBox.question(
-            self,
+        return self._confirm(
             tr("dlg_twitch_long_title"),
             tr("dlg_twitch_long_text", files="\n".join(long_files[:10]),
-               seconds=f"{twitch_smooth_duration_limit():g}"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        return answer == QMessageBox.StandardButton.Yes
+               seconds=number(twitch_smooth_duration_limit())),
+            tr("btn_continue_anyway"))
 
     def _job_duration(self, job):
         """Сколько секунд исходника пойдёт в работу с учётом обрезки."""
@@ -3042,7 +3188,8 @@ class MainWindow(QMainWindow):
         if len(running) == 1:
             current = tr("progress_current", name=running[0])
         else:
-            current = tr("progress_parallel", count=len(running))
+            current = tr("progress_parallel", count=len(running),
+                         files=plural("word_files", len(running)))
         parts = [tr("progress_done_of", done=finished, total=total), current]
         remaining = self._estimate_remaining(finished, total)
         if remaining:
@@ -3062,8 +3209,7 @@ class MainWindow(QMainWindow):
         seconds = max(0.0, float(seconds))
         if seconds < 10:
             # Короткие ролики и эмодзи: без дробной части «0.75 сек» стало бы «0 сек».
-            text = f"{seconds:.1f}".rstrip("0").rstrip(".")
-            return tr("sec", value=text or "0")
+            return tr("sec", value=number(round(seconds, 1)))
         seconds = int(seconds)
         if seconds < 60:
             return tr("sec", value=seconds)
@@ -3213,7 +3359,7 @@ class MainWindow(QMainWindow):
         except OSError:
             return False
 
-    def _on_version_menu(self, position):
+    def _on_version_menu(self, position, anchor=None):
         menu = QMenu(self)
         toggle = QAction(tr("update_check_toggle"), self)
         toggle.setCheckable(True)
@@ -3225,7 +3371,7 @@ class MainWindow(QMainWindow):
         log_action = QAction(tr("menu_open_log"), self)
         log_action.triggered.connect(self._open_log_folder)
         menu.addAction(log_action)
-        menu.exec(self.version_label.mapToGlobal(position))
+        menu.exec((anchor or self.version_label).mapToGlobal(position))
 
     def _start_update_check(self):
         """Раз в сутки спрашивает GitHub о новой версии — в фоне и молча."""
@@ -3255,7 +3401,10 @@ class MainWindow(QMainWindow):
         self.settings_store.setValue("known_update", version)
         self.settings_store.setValue("known_update_url", url)
         self.update_button.setText(tr("update_available", version=version))
+        self.update_button.setToolTip(
+            tr("update_tip", current=version_string(), version=version))
         self.update_button.setVisible(True)
+        self.version_label.setVisible(False)
 
     def _open_update_page(self):
         QDesktopServices.openUrl(QUrl(self._update_url or RELEASES_URL))

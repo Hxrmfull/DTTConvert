@@ -9,7 +9,7 @@
 ловит их по типу (подбор FPS, тесты), работает как прежде.
 """
 
-from i18n import tr
+from i18n import number, tr
 
 
 class LocalizedError(Exception):
@@ -23,8 +23,15 @@ class LocalizedError(Exception):
         self.fields = fields
 
     def text(self):
-        message = tr(self.key, **self.fields)
-        return f"{message}\n{self.detail}" if self.detail else message
+        # Дробные поля — с разделителем языка интерфейса («3,5 сек»), как
+        # в полях ввода. Числа хранятся сырыми: язык могут переключить уже
+        # после обработки.
+        fields = {name: number(value) if isinstance(value, float) else value
+                  for name, value in self.fields.items()}
+        message = tr(self.key, **fields)
+        # Пустая строка отделяет сообщение от сырого вывода FFmpeg: в окне
+        # подробностей иначе они сливались в один абзац.
+        return f"{message}\n\n{self.detail}" if self.detail else message
 
     def __str__(self):
         return self.text()
