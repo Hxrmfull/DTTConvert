@@ -61,8 +61,8 @@ QSettings(ORGANIZATION, ORGANIZATION).clear(); pin_language()  # чистый т
 w = MainWindow(); w.output_dir = WORK; w.output_dir_edit.setText(WORK); w.show(); app.processEvents()
 
 def t_version():
-    assert APP_VERSION == "1.1.0", APP_VERSION
-    assert version_string() == "1.1.0", version_string()
+    assert APP_VERSION == "1.2.0", APP_VERSION
+    assert version_string() == "1.2.0", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
     assert version_string() in w.version_label.text(), w.version_label.text()
