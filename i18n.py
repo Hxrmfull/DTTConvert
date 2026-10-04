@@ -432,10 +432,14 @@ STRINGS = {
         "Channel Points reward icon: PNG, {sizes}, transparent background, "
         "each no larger than {limit}."),
     "hint_7tv": (
-        "Смайлик 7TV: {size}×{size} px. Из видео и анимации — анимированный "
-        "WEBP (до {frames} кадров), из картинки — PNG. Не больше {limit}.",
-        "7TV emote: {size}×{size} px. Video and animations become an animated "
-        "WEBP (up to {frames} frames), still pictures a PNG. No larger than {limit}."),
+        "Смайлик 7TV: высота {size} px, ширина по пропорциям картинки — до {width} "
+        "(широкие смайлики 7TV показывает так же). Из видео и анимации — "
+        "анимированный WEBP (до {frames} кадров), из картинки — PNG. Не больше "
+        "{limit}. «Заполнить квадрат» обрежет до {size}×{size}.",
+        "7TV emote: {size} px high, as wide as the picture's proportions allow — up "
+        "to {width} (7TV shows wide emotes the same way). Video and animations become "
+        "an animated WEBP (up to {frames} frames), still pictures a PNG. No larger "
+        "than {limit}. \"Fill the square\" crops it to {size}×{size}."),
     "col_twitch_emotes": ("СМАЙЛИКИ TWITCH", "TWITCH EMOTES"),
     "col_twitch_more": ("ЗНАЧКИ И РАСШИРЕНИЯ", "BADGES AND EXTENSIONS"),
     "preset_twitch_badge": ("Значок подписки (3 файла)", "Sub badge (3 files)"),
@@ -445,7 +449,7 @@ STRINGS = {
     # раньше рядом стояли «TG Стикер», «DC Эмодзи», «WA Стикер» и «Twitch PNG».
     "lbl_twitch_badge_pack": ("Twitch: значок 18/36/72", "Twitch: badge 18/36/72"),
     "lbl_twitch_points_pack": ("Twitch: баллы 28/56/112", "Twitch: points 28/56/112"),
-    "lbl_7tv": ("7TV: смайлик 128×128", "7TV: emote 128×128"),
+    "lbl_7tv": ("7TV: смайлик высотой 128", "7TV: emote 128 high"),
 
     # --- WhatsApp ---
     "tab_whatsapp_tip": ("Готовые пресеты стикеров WhatsApp",

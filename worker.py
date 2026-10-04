@@ -743,7 +743,7 @@ class ConversionWorker(QThread):
                         input_path, output_path, size, preset.max_bytes,
                         fps_cap=preset.fps_cap, max_frames=preset.max_frames,
                         trim=trim, transform=transform, fill=fill,
-                        progress_callback=part,
+                        progress_callback=part, box=preset.box,
                     )
                     continue
 
@@ -758,7 +758,7 @@ class ConversionWorker(QThread):
                     source = frame_path
                 ImageProcessor.convert_twitch_static(
                     source, output_path, size, transform, fill=fill,
-                    limit_bytes=preset.max_bytes,
+                    limit_bytes=preset.max_bytes, box=preset.box,
                 )
                 self._emit_progress(index, offset + int(share))
         self._emit_progress(index, 100)

@@ -2798,7 +2798,12 @@ class MainWindow(QMainWindow):
         """
         if not getattr(self, "_ui_ready", False):
             return
-        wanted = self._animate_media and self.isVisible() and not self.isMinimized()
+        # Окно на виду и в фокусе: свёрнутое или неактивное (щёлкнули по
+        # рабочему столу или другой программе) ничего не проигрывает.
+        watched = self.isVisible() and not self.isMinimized() and self.isActiveWindow()
+        for preview in getattr(self, "chat_previews", {}).values():
+            preview.set_suspended(not watched)
+        wanted = self._animate_media and watched
         visible = self._visible_queue_items() if wanted else {}
         self._queue_motion_items = visible
         for path in list(self._queue_movies):
@@ -2900,8 +2905,9 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event):
         super().changeEvent(event)
-        # Свернули или развернули окно — анимации останавливаются или идут.
-        if event.type() == QEvent.Type.WindowStateChange:
+        # Свернули, развернули, переключились на другое окно или вернулись —
+        # анимации останавливаются или идут.
+        if event.type() in (QEvent.Type.WindowStateChange, QEvent.Type.ActivationChange):
             self._schedule_motion_sync()
 
     def resizeEvent(self, event):

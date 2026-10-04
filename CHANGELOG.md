@@ -32,6 +32,12 @@ versions follow [Semantic Versioning](https://semver.org/).
   version number opens its menu with a plain click; the menu looks like the
   drop-down lists and appears with the same smooth animation.
 - The window is at least 1010 px wide (was 980): seven tabs need the room.
+- **7TV emotes keep their proportions**: 128 px high and as wide as the
+  picture, up to 3:1 — 7TV stores and shows them that way, so a wide
+  emote no longer shrinks into a square. Limits follow 7TV's upload
+  dialog: up to 7 MB and 1000 frames (was 1 MB and 150).
+- Animations pause while the app window is inactive, not only when it's
+  minimized.
 
 ### Removed
 

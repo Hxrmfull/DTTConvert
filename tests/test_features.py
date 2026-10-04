@@ -1119,7 +1119,8 @@ def t_motion_rules_and_toggle():
     frames[0].save(gif, save_all=True, append_images=frames[1:], duration=80, loop=0)
     assert media_motion.is_short(3) and not media_motion.is_short(12)
 
-    win = MainWindow(); win.resize(1140, 790); win.show(); settle(300)
+    win = MainWindow(); win.resize(1140, 790); win.show()
+    win.activateWindow(); settle(300)  # анимации идут только в активном окне
     win._on_scan_finished([long_video, gif], [])
     win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
     preview = win.chat_previews["twitch"]
@@ -1161,6 +1162,24 @@ def t_motion_rules_and_toggle():
     assert not toggle.isChecked()
     toggle.trigger(); settle(300)
     assert gif in win._queue_movies and preview._movie is not None, "анимация не вернулась"
+
+    # Окно стало неактивным (щёлкнули по другому окну) — всё стоит.
+    from PyQt6.QtWidgets import QWidget
+    from PyQt6.QtGui import QMovie
+    other = QWidget(); other.resize(200, 100); other.show(); other.activateWindow()
+    deadline = _time.monotonic() + 5
+    while win.isActiveWindow() and _time.monotonic() < deadline:
+        settle(50)
+    settle(300)
+    assert not win._queue_movies, "в неактивном окне миниатюры анимируются"
+    assert preview._movie.state() != QMovie.MovieState.Running, "предпросмотр не на паузе"
+    win.activateWindow()
+    deadline = _time.monotonic() + 5
+    while not win._queue_movies and _time.monotonic() < deadline:
+        settle(50)
+    assert gif in win._queue_movies, "после возврата в окно анимация не пошла"
+    assert preview._movie.state() == QMovie.MovieState.Running
+    other.close()
     win.close()
 check("анимация файлов: только короткие, переключатель в меню версии",
       t_motion_rules_and_toggle)

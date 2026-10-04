@@ -257,8 +257,12 @@ class ImageProcessor:
 
     @classmethod
     def convert_square_static(cls, input_path, output_path, size, limit_bytes,
-                              transform=None, fill=False, pil_format="PNG"):
-        """Квадратная статичная картинка с прозрачным фоном под лимит площадки."""
+                              transform=None, fill=False, pil_format="PNG", box=None):
+        """Квадратная статичная картинка с прозрачным фоном под лимит площадки.
+
+        box — рамка (ширина, высота): картинка вписывается в неё с
+        сохранением пропорций и без полей (широкие смайлики 7TV).
+        """
         with Image.open(input_path) as source_image:
             source_image.load()
             working = source_image.convert("RGBA")
@@ -267,15 +271,22 @@ class ImageProcessor:
                     working, transform.rotate,
                     transform.flip_horizontal, transform.flip_vertical,
                 )
-            canvas = cls._fit_into_square(working, size, fill)
+            if box and not fill:
+                width, height = working.size
+                _ensure_valid_size(width, height)
+                ratio = min(box[0] / width, box[1] / height)
+                canvas = working.resize((max(1, round(width * ratio)),
+                                         max(1, round(height * ratio))), Image.LANCZOS)
+            else:
+                canvas = cls._fit_into_square(working, size, fill)
             save_within_limit(canvas, output_path, pil_format, limit_bytes)
 
     @classmethod
     def convert_twitch_static(cls, input_path, output_path, size, transform=None,
-                              fill=False, limit_bytes=TWITCH_MAX_STATIC_BYTES):
-        """Квадратный PNG для смайлика, значка или иконки баллов Twitch."""
+                              fill=False, limit_bytes=TWITCH_MAX_STATIC_BYTES, box=None):
+        """PNG для смайлика, значка или иконки баллов Twitch (и смайлика 7TV)."""
         cls.convert_square_static(
-            input_path, output_path, size, limit_bytes, transform, fill
+            input_path, output_path, size, limit_bytes, transform, fill, box=box
         )
 
     @classmethod

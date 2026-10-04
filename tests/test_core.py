@@ -955,11 +955,20 @@ check("N4 значки подписки и иконки баллов Twitch: р�
 def t_7tv_auto():
     d=os.path.join(WORK,"7tv_anim"); made=run_job(ANIM_WEBP,"seventv_emote",d)
     assert made==["эмоут_7tv.webp"], made
+    # 7TV хранит смайлик в его пропорциях: высота 128, ширина по картинке
+    # (исходник 200×100 → 256×128), без прозрачных полей.
     with Image.open(os.path.join(d,made[0])) as im:
-        assert im.size==(128,128) and getattr(im,"n_frames",1)>1, (im.size, getattr(im,"n_frames",1))
+        assert im.size==(256,128) and getattr(im,"n_frames",1)>1, (im.size, getattr(im,"n_frames",1))
     d2=os.path.join(WORK,"7tv_static"); made2=run_job(IMG,"seventv_emote",d2)
     assert made2==["img_7tv.png"], made2
-check("N5 7TV: анимация из анимации, PNG из картинки", t_7tv_auto)
+    with Image.open(os.path.join(d2,made2[0])) as im: assert im.size==(256,128), im.size
+    # Шире 3:1 — упирается в 384 по ширине.
+    d3=os.path.join(WORK,"7tv_wide"); made3=run_job(WIDE,"seventv_emote",d3)
+    with Image.open(os.path.join(d3,made3[0])) as im: assert im.size==(384,96), im.size
+    # «Заполнить квадрат» — по-прежнему квадрат.
+    d4=os.path.join(WORK,"7tv_fill"); made4=run_job(IMG,"seventv_emote",d4,fill_square=True)
+    with Image.open(os.path.join(d4,made4[0])) as im: assert im.size==(128,128), im.size
+check("N5 7TV: анимация из анимации, PNG из картинки, свои пропорции", t_7tv_auto)
 
 def t_whatsapp():
     d=os.path.join(WORK,"wa"); made=run_job(IMG,"whatsapp_static",d)
