@@ -228,6 +228,13 @@ class PopupMenu(QMenu):
         self._appear = None
 
     def showEvent(self, event):
+        # Поле под галочку слева — только когда в меню есть пункты с
+        # галочкой; в меню очереди оно было пустым и сдвигало текст.
+        checks = any(action.isCheckable() for action in self.actions())
+        if self.property("checks") != checks:
+            self.setProperty("checks", checks)
+            self.style().unpolish(self)
+            self.style().polish(self)
         super().showEvent(event)
         end = self.pos()
         group = QParallelAnimationGroup(self)
@@ -601,7 +608,11 @@ class StatusDotDelegate(QStyledItemDelegate):
         # Ширина строки — не по тексту, а минимальная: тогда список растягивает
         # строки ровно на свою ширину и не заводит горизонтальную прокрутку.
         size = super().sizeHint(option, index)
-        return QSize(1, size.height())
+        # Высота — не меньше места под миниатюру: иначе строка широкой
+        # картинки (миниатюра низкая) была вдвое ниже соседних.
+        # 16 — поля строки сверху и снизу (QListWidget::item, padding 8px).
+        thumbnail = option.decorationSize.height() if option.decorationSize.isValid() else 0
+        return QSize(1, max(size.height(), thumbnail + 16))
 
     def paint(self, painter, option, index):
         opt = QStyleOptionViewItem(option)

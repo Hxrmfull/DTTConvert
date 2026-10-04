@@ -5,6 +5,42 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.5.0 — 2026-10-04
+
+### Added
+
+- **Platform colours can be turned off**: "Platform colours on tabs" in the
+  version menu keeps the whole interface in one colour, the chat preview
+  included.
+- **A "check all" box in the queue header** with the file count — it
+  replaces the "Check all" and "Uncheck all" buttons, so the queue gets a
+  row more room.
+
+### Changed
+
+- The status line sits at the bottom left in regular-size text, next to
+  Start; "Overwrite files" moved into the output folder row.
+- Trimming reads "From [0.00 s] to [1.50 s] = 1.5 s of 2" — the resulting
+  length is shown right away. The Telegram fragment has the units inside
+  its fields, like trimming, and a bit more room above it.
+- The chat preview grows into free space on tabs with few presets.
+- Disabled buttons have a plain muted border (the dashed one is kept for
+  tab reordering); "Remove from the queue" is set apart in the queue menu.
+- Queue check boxes look the same as the "check all" box.
+- Labels on the General tab stand next to their fields ("Rotation",
+  "Audio", "Bitrate" and others used to sit far from them).
+- The empty queue shows a drawn icon and the hints as one centred block.
+- All queue rows have the same height; thumbnails are fitted into a square.
+- The queue and settings headers are aligned; the link field no longer
+  grabs focus at startup.
+- Menus without check marks have no empty margin on the left.
+
+### Fixed
+
+- The "Add from a link" window had English OK/Cancel buttons; standard Qt
+  texts (message box buttons, the copy/paste menu of text fields) are now
+  in Russian too.
+
 ## 1.4.0 — 2026-10-04
 
 ### Added

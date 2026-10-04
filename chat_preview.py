@@ -23,7 +23,10 @@ from i18n import tr
 # видео: выше неё вкладке понадобилась бы прокрутка при размере окна по
 # умолчанию (см. tests/test_layout_normal.py).
 PREVIEW_MIN_HEIGHT = 64
-PREVIEW_MAX_HEIGHT = 170
+# На вкладках с малым числом пресетов предпросмотр занимает свободное
+# место карточки, а не оставляет под собой пустую полосу.
+PREVIEW_MAX_HEIGHT = 240
+PREVIEW_PREFERRED_HEIGHT = 170
 PADDING = 12
 # Мелкие подписи сцены («крупно», «кадр из видео», время сообщения).
 # Было 10 px — на тёмном фоне чата они читались с трудом.
@@ -43,6 +46,11 @@ TWITCH_NAME_COLORS = ("#bf94ff", "#00b5ad")
 
 # Цвета сцен — из тёмных тем самих площадок, чтобы макет узнавался.
 SCENES = {
+    # Цвета площадок выключены в меню версии: макет чата тот же, а цвета —
+    # основной темы программы, чтобы весь интерфейс был одного цвета.
+    "neutral": {"bg": "#1a1b21", "panel": "#2a2c38", "text": "#e6e6e6",
+                "muted": "#a4a6b4", "name": "#a39dff", "accent": "#6c63ff",
+                "input": "#2a2c38"},
     "twitch": {"bg": "#0e0e10", "panel": "#18181b", "text": "#efeff1",
                "muted": "#adadb8", "name": "#bf94ff", "accent": "#9146ff",
                "input": "#26262c"},
@@ -368,6 +376,7 @@ class ChatPreview(QWidget):
         self._movie_from_video = False
         # Окно неактивно или свёрнуто — анимация стоит на текущем кадре.
         self._suspended = False
+        self._neutral = False
         self._code = ""
         self._fill = False
         self._transform = (0, False, False)
@@ -380,7 +389,10 @@ class ChatPreview(QWidget):
     # --- данные ---
 
     def sizeHint(self):
-        return QSize(420, PREVIEW_MAX_HEIGHT)
+        # Желаемая высота — прежняя: при ней страницы помещаются без
+        # прокрутки. Растёт предпросмотр сам, политикой Expanding, когда в
+        # карточке есть свободное место, — до PREVIEW_MAX_HEIGHT.
+        return QSize(420, PREVIEW_PREFERRED_HEIGHT)
 
     def minimumSizeHint(self):
         return QSize(200, PREVIEW_MIN_HEIGHT)
@@ -530,7 +542,16 @@ class ChatPreview(QWidget):
             self._cache[key] = pixmap
         return pixmap
 
+    def set_neutral(self, neutral):
+        """Цвета основной темы вместо цветов площадки (меню версии)."""
+        neutral = bool(neutral)
+        if neutral != self._neutral:
+            self._neutral = neutral
+            self.update()
+
     def _scene(self):
+        if self._neutral:
+            return SCENES["neutral"]
         return SCENES.get(self.platform, SCENES["discord"])
 
     def _font(self, pixel_size, bold=False):

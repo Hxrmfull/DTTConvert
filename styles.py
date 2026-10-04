@@ -434,12 +434,13 @@ QPushButton:pressed {
     background-color: $button_pressed;
 }
 
-/* Недоступная кнопка: заметно бледнее и без рамки-«кнопочности»,
-   чтобы её нельзя было спутать с активной. */
+/* Недоступная кнопка: заметно бледнее, рамка сплошная и тусклая.
+   Пунктир — только у вкладок в режиме правки порядка: раньше выключенная
+   кнопка выглядела так же, и их можно было спутать. */
 QPushButton:disabled {
     background-color: $disabled_bg;
     color: $disabled_text;
-    border: 1px dashed $disabled_border;
+    border: 1px solid $disabled_border;
 }
 
 QPushButton#StartButton {
@@ -457,7 +458,7 @@ QPushButton#StartButton:hover {
 
 QPushButton#StartButton:disabled {
     background-color: $start_disabled_bg;
-    border: 1px dashed $card_border;
+    border: 1px solid $card_border;
     color: $start_disabled_text;
 }
 
@@ -477,7 +478,7 @@ QPushButton#StopButton:hover {
 
 QPushButton#StopButton:disabled {
     background-color: $stop_disabled_bg;
-    border: 1px dashed $stop_disabled_border;
+    border: 1px solid $stop_disabled_border;
     color: $stop_disabled_text;
 }
 
@@ -651,6 +652,10 @@ QMenu#PopupMenu::item {
     color: $text;
     border-radius: 5px;
     padding: 7px 16px 7px 32px;
+}
+
+QMenu#PopupMenu[checks="false"]::item {
+    padding-left: 14px;
 }
 
 QMenu#PopupMenu::item:selected {
@@ -828,6 +833,41 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background-color: $accent;
     border: 1px solid $accent_hover;
+    image: url("$check_icon");
+}
+
+QCheckBox::indicator:indeterminate {
+    background-color: $accent;
+    border: 1px solid $accent_hover;
+    image: url("$dash_icon");
+}
+
+/* Галочки строк очереди — того же вида, что «все» в её заголовке. */
+QListWidget::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid $check_border;
+    background-color: $surface;
+}
+
+QListWidget::indicator:checked {
+    background-color: $accent;
+    border: 1px solid $accent_hover;
+    image: url("$check_icon");
+}
+
+/* «Все файлы» в заголовке очереди: галочка с числом файлов. */
+QCheckBox#QueueCheckAll {
+    color: $hint_text;
+    spacing: 6px;
+}
+
+/* Строка состояния внизу: обычный размер текста — это главный ответ
+   на «что сейчас происходит», а не сноска. */
+QLabel#StatusLabel {
+    color: $text;
+    font-size: 13px;
 }
 
 QProgressBar {
@@ -927,7 +967,7 @@ QToolTip {
     background-color: $hover_bg;
     color: $text;
     border: 1px solid $card_border;
-    padding: 4px;
+    padding: 6px 8px;
 }
 
 /* Ссылка на новую версию рядом с номером версии: заметная, но не кричащая. */
@@ -958,7 +998,7 @@ QPushButton#PrimaryButton:disabled,
 QPushButton#PresetButton:disabled {
     background-color: $disabled_bg;
     color: $disabled_text;
-    border: 1px dashed $disabled_border;
+    border: 1px solid $disabled_border;
 }
 
 /* Фокус клавиатуры. Правило в самом конце и с теми же #именами, что у
@@ -1020,6 +1060,24 @@ def _draw_arrow(path, color, pointing_down):
     pixmap.save(path, "PNG")
 
 
+def _draw_dash(path, color):
+    """Черта для галочки «отмечены не все» (QSS её не рисует)."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
+
+    size = 28
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), 3.4)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    painter.drawLine(QPointF(8, 14), QPointF(20, 14))
+    painter.end()
+    pixmap.save(path, "PNG")
+
+
 def _draw_check(path, color):
     """Галочка для пунктов-переключателей меню (QSS её не рисует)."""
     from PyQt6.QtCore import QPointF, Qt
@@ -1073,11 +1131,15 @@ def _arrow_icon_paths(colors):
         # В QSS путь всегда через прямые слэши, даже на Windows.
         paths[key] = icon_path.replace("\\", "/")
     check_path = os.path.join(assets_dir, "menu_check.png")
+    dash_path = os.path.join(assets_dir, "check_dash.png")
     try:
         _draw_check(check_path, colors["text"])
+        _draw_dash(dash_path, colors["text"])
         paths["check_icon"] = check_path.replace("\\", "/")
+        paths["dash_icon"] = dash_path.replace("\\", "/")
     except Exception:
         paths["check_icon"] = ""
+        paths["dash_icon"] = ""
     _arrow_icons = paths
     return paths
 

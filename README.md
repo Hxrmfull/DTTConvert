@@ -107,7 +107,7 @@ The bundled FFmpeg is checked against `ffmpeg_checksums.txt`.
 ## Other
 
 - **Version menu** (the version number in the top-right corner): update
-  check, file animation, log folder
+  check, platform colours on tabs, file animation, log folder
   (`%LOCALAPPDATA%\DTTConvert\logs\app.log`).
 - **Animation:** short animations and videos (up to 10 s) play in queue
   thumbnails and the preview; long videos show a single frame. Turn it off
