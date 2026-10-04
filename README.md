@@ -53,6 +53,8 @@ GIF, stickers and audio, put `ffmpeg.exe` and `ffprobe.exe` next to
 - **Links:** paste a link with `Ctrl+V`, drag it from a browser or use
   "Add from a link…" in the queue menu. A direct link to a file works,
   and so does a 7TV, FFZ or Giphy page or any page with a picture.
+- **Tabs:** the pencil to the right of the tabs lets you drag them into
+  your own order.
 - **Shortcuts:** `Ctrl+O` — add, `Delete` — remove, `Alt+↑/↓` — reorder,
   `Ctrl+Enter` — start, `Esc` — stop. The whole window works with `Tab`.
 

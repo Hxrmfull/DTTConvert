@@ -61,8 +61,8 @@ QSettings(ORGANIZATION, ORGANIZATION).clear(); pin_language()  # чистый т
 w = MainWindow(); w.output_dir = WORK; w.output_dir_edit.setText(WORK); w.show(); app.processEvents()
 
 def t_version():
-    assert APP_VERSION == "1.3.0", APP_VERSION
-    assert version_string() == "1.3.0", version_string()
+    assert APP_VERSION == "1.4.0", APP_VERSION
+    assert version_string() == "1.4.0", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
     assert version_string() in w.version_button.text(), w.version_button.text()
@@ -1183,6 +1183,80 @@ def t_motion_rules_and_toggle():
     win.close()
 check("анимация файлов: только короткие, переключатель в меню версии",
       t_motion_rules_and_toggle)
+
+
+def t_tab_order():
+    """Порядок вкладок: по умолчанию, перетаскивание, клавиши, сохранение."""
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtTest import QTest
+    from main_window import DEFAULT_TAB_ORDER, TAB_KEYS, saved_tab_order
+    store = QSettings(ORGANIZATION, ORGANIZATION)
+    store.remove("tab_order")
+
+    def visual(window):
+        return [window.tab_strip._keys[b] for b in
+                sorted(window.tab_buttons, key=lambda b: b.x())]
+
+    # Сохранённый порядок дополняется новыми вкладками, мусор отбрасывается.
+    assert saved_tab_order("") == list(DEFAULT_TAB_ORDER)
+    assert saved_tab_order("youtube,main,bogus,main") == \
+        ["youtube", "whatsapp", "main", "telegram", "twitch", "discord", "kick"]
+    # Новая вкладка (здесь — WhatsApp) встаёт за своей соседкой по умолчанию.
+    assert saved_tab_order("main,youtube,kick,discord,twitch,telegram") == \
+        ["main", "youtube", "whatsapp", "kick", "discord", "twitch", "telegram"]
+
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    assert visual(win) == list(DEFAULT_TAB_ORDER), visual(win)
+    assert win.tab_order_button.toolTip() == "Изменить порядок вкладок"
+
+    # Без режима правки вкладка просто открывается щелчком.
+    whatsapp = win.tab_buttons[TAB_KEYS.index("whatsapp")]
+    QTest.mouseClick(whatsapp, Qt.MouseButton.LeftButton); settle(50)
+    assert win.settings_tabs.currentIndex() == TAB_KEYS.index("whatsapp")
+
+    # Режим правки: тащим WhatsApp в начало.
+    win.tab_order_button.click(); settle(50)
+    assert win.tab_strip.is_editing() and "карандаш" in win.current_file_label.text()
+    start = QPoint(whatsapp.width() // 2, whatsapp.height() // 2)
+    QTest.mousePress(whatsapp, Qt.MouseButton.LeftButton, pos=start)
+    for step in range(1, 31):
+        target = whatsapp.mapFromParent(QPoint(max(2, whatsapp.x() - 25), whatsapp.y() + 5))
+        QTest.mouseMove(whatsapp, target)
+        settle(5)
+    QTest.mouseRelease(whatsapp, Qt.MouseButton.LeftButton,
+                       pos=whatsapp.mapFromParent(QPoint(2, 5)))
+    settle(400)  # анимация
+    assert visual(win)[0] == "whatsapp", visual(win)
+    assert store.value("tab_order", "", type=str).startswith("whatsapp,"), \
+        store.value("tab_order", "", type=str)
+    # В режиме правки щелчок не переключает вкладку.
+    page = win.settings_tabs.currentIndex()
+    QTest.mouseClick(win.tab_buttons[TAB_KEYS.index("kick")], Qt.MouseButton.LeftButton)
+    settle(50)
+    assert win.settings_tabs.currentIndex() == page
+
+    # Стрелки двигают вкладку с фокусом.
+    kick = win.tab_buttons[TAB_KEYS.index("kick")]
+    before = visual(win).index("kick")
+    kick.setFocus(); QTest.keyClick(kick, Qt.Key.Key_Right); settle(300)
+    assert visual(win).index("kick") == before + 1, visual(win)
+    win.tab_order_button.click(); settle(300)
+    assert not win.tab_strip.is_editing()
+    order = visual(win)
+    assert store.value("tab_order", "", type=str) == ",".join(order)
+
+    # Порядок переживает смену языка (пересборку окна), сброс и новое окно.
+    win.language_combo.setCurrentIndex(win.language_combo.findData("en")); settle(100)
+    assert visual(win) == order, visual(win)
+    win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(100)
+    win._on_reset_settings(); settle(50)
+    assert store.value("tab_order", "", type=str) == ",".join(order), "сброс стёр порядок"
+    win.close()
+    win2 = MainWindow(); win2.show(); settle(100)
+    assert visual(win2) == order, visual(win2)
+    win2.close()
+    store.remove("tab_order")
+check("порядок вкладок: перетаскивание, клавиши, сохранение", t_tab_order)
 
 
 def idle_status_text():

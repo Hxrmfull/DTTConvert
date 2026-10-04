@@ -42,14 +42,21 @@ def tab_bar_problems(window, prefix=""):
     они не сжимаются, а наезжают одна на другую — проверка «подпись
     помещается в кнопку» этого не видит.
     """
+    from PyQt6.QtCore import QPoint
     found = []
-    buttons = window.tab_buttons
-    for left, right in zip(buttons, buttons[1:]):
-        if left.geometry().right() >= right.geometry().left():
-            found.append(f"{prefix}вкладки «{left.text()}» и «{right.text()}» налезают")
-    last = buttons[-1]
-    if last.geometry().right() > last.parentWidget().width():
-        found.append(f"{prefix}вкладка «{last.text()}» выходит за край")
+    # Порядок вкладок пользователь меняет сам — сверяем по месту на экране.
+    # Карандаш порядка вкладок стоит последним в той же строке.
+    widgets = sorted(window.tab_buttons, key=lambda b: b.mapTo(window, QPoint()).x())
+    widgets.append(window.tab_order_button)
+    edges = [(w, w.mapTo(window, QPoint()).x(), w.mapTo(window, QPoint()).x() + w.width())
+             for w in widgets]
+    for (left, _, left_end), (right, right_start, _) in zip(edges, edges[1:]):
+        if left_end > right_start:
+            found.append(f"{prefix}«{left.text()}» и «{right.text() or 'карандаш'}» налезают")
+    panel = window.right_panel
+    panel_end = panel.mapTo(window, QPoint()).x() + panel.width()
+    if edges[-1][2] > panel_end:
+        found.append(f"{prefix}кнопка порядка вкладок выходит за панель")
     return found
 
 

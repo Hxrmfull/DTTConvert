@@ -321,9 +321,9 @@ QPushButton#TabButton {
     color: $tab_text;
     border: 1px solid $border_subtle;
     border-radius: 6px;
-    /* Поля по бокам скромные: вкладок семь, и при больших полях строка
-       не помещалась в правую панель — кнопки наезжали друг на друга. */
-    padding: 7px 10px;
+    /* Поля по бокам скромные: семь вкладок и кнопка порядка должны
+       поместиться в правую панель — иначе кнопки наезжали друг на друга. */
+    padding: 7px 8px;
     font-weight: 500;
 }
 
@@ -337,6 +337,29 @@ QPushButton#TabButton:checked {
     color: $bright_text;
     border-color: $tab_checked_border;
     font-weight: 600;
+}
+
+/* Режим правки порядка: пунктир — вкладку можно взять и перетащить. */
+QPushButton#TabButton[editing="true"] {
+    border-style: dashed;
+    border-color: $hover_border;
+}
+
+/* Кнопка порядка вкладок — квадратик с карандашом в той же строке. */
+QPushButton#TabEditButton {
+    background: $tab_bg;
+    border: 1px solid $border_subtle;
+    border-radius: 6px;
+    padding: 0;
+}
+
+QPushButton#TabEditButton:hover {
+    background: $tab_hover_bg;
+}
+
+QPushButton#TabEditButton:checked {
+    background: $selected_bg;
+    border-color: $tab_checked_border;
 }
 
 /* Фон и рамку рисует контейнер: Qt не закрашивает фон под полосой
@@ -946,6 +969,7 @@ QPushButton#PresetButton:disabled {
    белой рамки нет. */
 QPushButton:focus,
 QPushButton#TabButton:focus,
+QPushButton#TabEditButton:focus,
 QPushButton#PresetButton:focus,
 QPushButton#PrimaryButton:focus,
 QPushButton#QuietButton:focus,
