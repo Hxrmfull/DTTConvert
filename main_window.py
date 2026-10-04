@@ -3353,8 +3353,12 @@ class MainWindow(QMainWindow):
         отступы и шрифты у них общие, поэтому вёрстка не сдвигается.
         """
         theme = theme_for_tab(self.settings_tabs.currentIndex())
-        # Темы площадок выключены в меню версии — весь интерфейс одного цвета.
-        if not self.settings_store.value("platform_themes", True, type=bool):
+        # Темы площадок выключены в меню версии — весь интерфейс одного цвета,
+        # и предпросмотр чата тоже: макет тот же, цвета основной темы.
+        themes_on = self.settings_store.value("platform_themes", True, type=bool)
+        for preview in getattr(self, "chat_previews", {}).values():
+            preview.set_neutral(not themes_on)
+        if not themes_on:
             theme = THEME_MAIN
         if theme == self._current_theme:
             return

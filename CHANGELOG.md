@@ -10,7 +10,8 @@ versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 
 - **Platform colours can be turned off**: "Platform colours on tabs" in the
-  version menu keeps the whole interface in one colour.
+  version menu keeps the whole interface in one colour, the chat preview
+  included.
 - **A "check all" box in the queue header** with the file count — it
   replaces the "Check all" and "Uncheck all" buttons, so the queue gets a
   row more room.

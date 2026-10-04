@@ -1269,6 +1269,9 @@ def t_platform_themes_toggle():
     assert toggle.isChecked()
     toggle.trigger(); settle(300)
     assert win.right_panel.styleSheet() == "", "с выключенными цветами вкладка окрашена"
+    from chat_preview import SCENES
+    preview = win.chat_previews["twitch"]
+    assert preview._scene() is SCENES["neutral"], "предпросмотр остался в цветах Twitch"
     assert store.value("platform_themes", True, type=bool) is False
     win.close()
     win2 = MainWindow(); win2.show(); settle(100)
@@ -1276,6 +1279,7 @@ def t_platform_themes_toggle():
     assert win2.right_panel.styleSheet() == "", "настройка не сохранилась"
     win2._set_platform_themes(True); settle(300)
     assert win2.right_panel.styleSheet()
+    assert win2.chat_previews["twitch"]._scene() is SCENES["twitch"]
     win2.close()
 check("цвета площадок на вкладках выключаются в меню версии", t_platform_themes_toggle)
 
