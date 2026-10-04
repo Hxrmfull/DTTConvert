@@ -5,6 +5,14 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- **New app icon**: the letters DTT on a stack of stickers. The loop arrow
+  in the D and the arrow on the last T stand for conversion, the stickers
+  for what the app turns files into.
+
 ## 1.2.1 — 2026-10-04
 
 ### Changed
