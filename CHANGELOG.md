@@ -35,7 +35,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
-- **BTTV emote preset**: BTTV users have moved to 7TV.
+- BTTV support.
 
 ## 1.2.2 — 2026-10-04
 

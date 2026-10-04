@@ -17,7 +17,6 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     pyqtProperty,
-    pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
 from PyQt6.QtWidgets import (QAbstractButton, QCheckBox, QLabel, QMenu, QStyle,
@@ -202,34 +201,6 @@ class ElidedLabel(QLabel):
             painter, rect, int(self.alignment()), self.palette(), self.isEnabled(),
             elided, QPalette.ColorRole.WindowText)
         painter.end()
-
-
-class MenuLabel(QLabel):
-    """Подпись с контекстным меню, до которого можно добраться с клавиатуры.
-
-    Номер версии открывает папку журнала двойным щелчком, а меню —
-    правым. Мышью это работало, с клавиатуры — нет: подпись не брала
-    фокус. Теперь до неё доходит Tab, а Enter, пробел, клавиша меню или
-    Shift+F10 открывают то же меню.
-    """
-
-    menuRequested = pyqtSignal(QPoint)
-
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
-        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.menuRequested)
-
-    def keyPressEvent(self, event):
-        key = event.key()
-        shift_f10 = (key == Qt.Key.Key_F10
-                     and event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space,
-                   Qt.Key.Key_Menu) or shift_f10:
-            self.menuRequested.emit(self.rect().center())
-            return
-        super().keyPressEvent(event)
 
 
 class PopupMenu(QMenu):
