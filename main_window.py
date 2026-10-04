@@ -6,7 +6,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 
-from PyQt6.QtCore import (Qt, QEasingCurve, QLocale, QPropertyAnimation,
+from PyQt6.QtCore import (Qt, QEasingCurve, QEvent, QLocale, QPoint, QPropertyAnimation,
                           QSettings, QSize, QThread, QTimer, QUrl, pyqtSignal)
 from PyQt6.QtGui import (
     QAction,
@@ -18,6 +18,7 @@ from PyQt6.QtGui import (
     QImage,
     QImageReader,
     QKeySequence,
+    QMovie,
     QPainter,
     QPen,
     QPixmap,
@@ -47,7 +48,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QFileDialog,
     QProgressBar,
-    QMenu,
     QMessageBox,
     QSplitter,
     QSystemTrayIcon,
@@ -58,8 +58,7 @@ from PyQt6.QtWidgets import (
 )
 
 from animation_info import animated_image_info
-from lottie_utils import (is_tgs, preview_animation_path, representative_frame,
-                          write_preview_animation)
+from lottie_utils import is_tgs, representative_frame
 from app_info import APP_NAME, ORGANIZATION, RELEASES_URL, version_string, window_title
 from updater import (UpdateCheckWorker, UpdateDownloadWorker, installed_variant,
                      is_newer, launch_installer)
@@ -71,6 +70,7 @@ from discord_utils import (
     is_discord_format,
 )
 from errors import first_line, message_text
+import media_motion
 import url_import
 from styles import (THEME_MAIN, build_stylesheet, palette, theme_for_tab)
 from chat_preview import ChatPreview
@@ -106,7 +106,7 @@ from widgets import (
     round_combo_popup,
     GroupHeaderDelegate,
     ITEM_PARTS_ROLE,
-    MenuLabel,
+    PopupMenu,
     StatusDotDelegate,
     ToggleSwitch,
     apply_button_cursor,
@@ -299,22 +299,14 @@ PREVIEW_FRAME_SIZE = 320
 # Сколько готовых кадров предпросмотра держим про запас.
 PREVIEW_CACHE_LIMIT = 24
 # Настройки, которые «Сброс» сохраняет: они не про обработку файлов.
-PRESERVED_ON_RESET = ("language", "check_updates")
+PRESERVED_ON_RESET = ("language", "check_updates", "animate_media")
 # Сколько дней хранятся картинки, вставленные из буфера обмена.
 PASTED_KEEP_DAYS = 7
 # Адрес картинки во вставке из браузера («Копировать изображение»).
 IMG_SRC_RE = re.compile(r"""<img[^>]+src=["']([^"']+)""", re.IGNORECASE)
-# Что предпросмотр проигрывает как анимацию (умеет QMovie).
-PREVIEW_MOVIE_EXTS = {".gif", ".webp"}
-# Анимированные картинки, которые QMovie не проигрывает, — для них делается
-# копия в WEBP (Pillow собирает кадры APNG и AVIF с их задержками).
-PREVIEW_PILLOW_ANIMATED_EXTS = {".png", ".apng", ".avif"}
-# Проигрываемая копия видео для предпросмотра: столько секунд, такой FPS
-# и такой размер — показ в чате не крупнее 160 px.
-PREVIEW_VIDEO_SECONDS = 6
-PREVIEW_VIDEO_FPS = 15
-PREVIEW_ANIMATION_SIZE = 200
-PREVIEW_ANIMATION_MAX_FRAMES = 150
+# Через сколько миллисекунд после прокрутки или изменения очереди
+# пересчитывается, какие миниатюры анимировать.
+QUEUE_MOTION_SYNC_MS = 120
 # Больше этого числа миниатюр не строим — иначе добавление папки подвешивает окно.
 THUMBNAIL_LIMIT = 300
 # Сколько длится плавная смена цветов при переходе между вкладками площадок.
@@ -587,9 +579,9 @@ class PreviewFrameWorker(QThread):
     """
 
     frame_ready = pyqtSignal(str, QImage)
-    # Проигрываемая копия готова (preview_animation_path) — для видео и
-    # анимированных картинок, которые QMovie сам не проигрывает.
-    animation_ready = pyqtSignal(str)
+    # Что проигрывать вместо кадра (media_motion.motion_source); пустая
+    # строка — ничего: файл не анимирован или анимация длинная.
+    animation_ready = pyqtSignal(str, str)
 
     def __init__(self, path, ffmpeg, parent=None):
         super().__init__(parent)
@@ -611,10 +603,6 @@ class PreviewFrameWorker(QThread):
                         image = QImage(frame_path)
             else:
                 image = scaled_thumbnail(self.path, PREVIEW_FRAME_SIZE)
-                if is_tgs(self.path):
-                    # Проигрываемая копия стикера для предпросмотра: окно
-                    # найдёт её по пути (preview_animation_path).
-                    write_preview_animation(self.path)
         except Exception:
             _log.debug("Не удалось подготовить предпросмотр %s", self.path, exc_info=True)
         # Кадр — сразу: копия для проигрывания готовится секунду-другую,
@@ -623,71 +611,45 @@ class PreviewFrameWorker(QThread):
         # Окно закрывается — анимацию не начинаем: она идёт секунды.
         if self.isInterruptionRequested():
             return
+        source = None
         try:
-            if write_motion_preview(self.path, self.ffmpeg):
-                self.animation_ready.emit(self.path)
+            source = media_motion.motion_source(self.path, self.ffmpeg)
         except Exception:
             _log.debug("Не удалось сделать анимацию предпросмотра %s", self.path,
                        exc_info=True)
+        self.animation_ready.emit(self.path, source or "")
 
 
-def cleanup_preview_animations(max_age_days=PASTED_KEEP_DAYS):
-    """Удаляет старые проигрываемые копии предпросмотра из временной папки."""
-    folder = os.path.dirname(preview_animation_path(""))
-    try:
-        limit = time.time() - max_age_days * 24 * 60 * 60
-        for name in os.listdir(folder):
-            path = os.path.join(folder, name)
-            if os.path.isfile(path) and os.path.getmtime(path) < limit:
-                os.remove(path)
-    except OSError:
-        pass
+class QueueMotionWorker(QThread):
+    """Готовит анимацию для миниатюр очереди — по одному файлу, в фоне.
 
-
-def write_motion_preview(path, ffmpeg):
-    """Проигрываемая копия видео или анимированной картинки (WEBP).
-
-    Возвращает True, если копия есть. GIF, WEBP и .tgs сюда не попадают:
-    первые два проигрывает сам QMovie, у стикера своя копия.
+    Свой объект FFmpeg, а не общий окна: копию видео он делает секундами,
+    и при закрытии окна её надо остановить, не задев других.
     """
-    ext = os.path.splitext(path)[1].lower()
-    is_video = ext in VIDEO_EXTS
-    if not is_video and ext not in PREVIEW_PILLOW_ANIMATED_EXTS:
-        return False
-    target = preview_animation_path(path)
-    if os.path.isfile(target):
-        return True
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    partial = target + ".part.webp"
-    try:
-        if is_video:
-            if ffmpeg is None:
-                return False
-            ffmpeg.make_preview_animation(path, partial, PREVIEW_ANIMATION_SIZE,
-                                          PREVIEW_VIDEO_SECONDS, PREVIEW_VIDEO_FPS)
-        else:
-            from PIL import Image
 
-            with Image.open(path) as source:
-                count = getattr(source, "n_frames", 1)
-                if count < 2:
-                    return False
-                frames, durations = [], []
-                for index in range(min(count, PREVIEW_ANIMATION_MAX_FRAMES)):
-                    source.seek(index)
-                    frame = source.convert("RGBA")
-                    frame.thumbnail((PREVIEW_ANIMATION_SIZE, PREVIEW_ANIMATION_SIZE))
-                    frames.append(frame)
-                    durations.append(source.info.get("duration") or 100)
-            frames[0].save(partial, "WEBP", save_all=True, append_images=frames[1:],
-                           duration=durations, loop=0, quality=70)
-        # Готовый файл появляется целиком: недописанную копию предпросмотр
-        # принял бы за готовую.
-        os.replace(partial, target)
-        return True
-    finally:
-        if os.path.exists(partial):
-            os.remove(partial)
+    ready = pyqtSignal(str, str)
+
+    def __init__(self, paths, parent=None):
+        super().__init__(parent)
+        self.paths = list(paths)
+        self.ffmpeg = None
+
+    def run(self):
+        try:
+            from ffmpeg_utils import FFmpegProcessor
+
+            self.ffmpeg = FFmpegProcessor()
+        except Exception:
+            self.ffmpeg = None  # без FFmpeg анимируются картинки, но не видео
+        for path in self.paths:
+            if self.isInterruptionRequested():
+                break
+            source = None
+            try:
+                source = media_motion.motion_source(path, self.ffmpeg)
+            except Exception:
+                _log.debug("Не удалось подготовить анимацию %s", path, exc_info=True)
+            self.ready.emit(path, source or "")
 
 
 class FolderScanWorker(QThread):
@@ -938,6 +900,15 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._check_ffmpeg_status)
         self._update_worker = None
         self._update_url = None
+        # Анимация файлов в интерфейсе: что проигрывать для каждого файла
+        # (пустая строка — ничего), анимированные миниатюры очереди и поток,
+        # который их готовит. Выключается в меню версии.
+        self._animate_media = self.settings_store.value("animate_media", True, type=bool)
+        self._motion_sources = {}
+        self._queue_movies = {}
+        self._queue_motion_items = {}
+        self._queue_motion_worker = None
+        self._queue_motion_pending = []
         # Загрузка по ссылкам: поток, ссылки в очереди за ним, итоги.
         self._link_worker = None
         self._pending_links = []
@@ -954,7 +925,7 @@ class MainWindow(QMainWindow):
             url_import.cleanup_links(pasted_directory(), PASTED_KEEP_DAYS)
         except OSError:
             _log.debug("Не удалось почистить загрузки по ссылкам", exc_info=True)
-        cleanup_preview_animations()
+        media_motion.cleanup_preview_animations()
 
     def _restore_window_state(self):
         """Возвращает размер окна, вкладку и положение разделителя."""
@@ -993,6 +964,7 @@ class MainWindow(QMainWindow):
 
     def _rebuild_ui(self):
         """Собирает интерфейс заново, сохранив очередь и настройки."""
+        self._stop_all_queue_movies()
         entries = [self._entry(self.file_list.item(row))
                    for row in range(self.file_list.count())]
         current_row = self.file_list.currentRow()
@@ -1136,6 +1108,12 @@ class MainWindow(QMainWindow):
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self._on_queue_context_menu)
         self.file_list.setItemDelegate(StatusDotDelegate(self._status_at_index, self.file_list))
+        # Какие миниатюры анимировать, зависит от того, что видно.
+        self.file_list.verticalScrollBar().valueChanged.connect(self._schedule_motion_sync)
+        model = self.file_list.model()
+        for signal in (model.rowsInserted, model.rowsRemoved, model.rowsMoved,
+                       model.modelReset, model.layoutChanged):
+            signal.connect(self._schedule_motion_sync)
         # Перестановка мышью и Alt+↑/↓ нигде больше не упоминалась.
         self.file_list.setToolTip(tr("queue_tip"))
         self.file_list.setAccessibleName(tr("queue_title"))
@@ -1487,6 +1465,46 @@ class MainWindow(QMainWindow):
         self._load_settings_into_panel(JobSettings())
         self.current_file_label.setText(tr("reset_done"))
 
+    def _build_corner_controls(self, row):
+        """Номер версии с меню, ссылка на обновление и выбор языка."""
+        # Номер версии — тихая кнопка с меню: обновления, анимация файлов,
+        # журнал. Раньше меню открывалось только правым щелчком по подписи,
+        # и о нём мало кто знал.
+        self.version_button = QPushButton(f"v{version_string()}")
+        self.version_button.setObjectName("VersionButton")
+        self.version_button.setToolTip(
+            tr("version_tip", app=APP_NAME, version=version_string()))
+        self.version_button.setAccessibleName(
+            tr("version_accessible", version=version_string()))
+        version_menu = PopupMenu(self)
+        version_menu.aboutToShow.connect(lambda: self._fill_version_menu(version_menu))
+        self.version_button.setMenu(version_menu)
+
+        # Ссылка на новую версию: появляется, только если она вышла, и
+        # встаёт на место номера версии, а не рядом.
+        self.update_button = QPushButton()
+        self.update_button.setObjectName("UpdateButton")
+        self.update_button.setVisible(False)
+        self.update_button.clicked.connect(self._on_update_clicked)
+        self.update_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.update_button.customContextMenuRequested.connect(
+            lambda position: self._on_version_menu(position, self.update_button))
+
+        self.language_combo = QComboBox()
+        self.language_combo.setObjectName("CornerCombo")
+        self.language_combo.setToolTip(tr("language_tip"))
+        self.language_combo.setAccessibleName(tr("language_tip"))
+        for code in LANGUAGE_ORDER:
+            self.language_combo.addItem(LANGUAGE_NAMES[code], code)
+        index = self.language_combo.findData(current_language())
+        if index >= 0:
+            self.language_combo.setCurrentIndex(index)
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
+
+        row.addWidget(self.update_button)
+        row.addWidget(self.version_button)
+        row.addWidget(self.language_combo)
+
     def _build_right_panel(self):
         # Тумблеры «заполнить квадрат» на каждой вкладке площадки и
         # предпросмотры — по площадке; заполняются при сборке вкладок.
@@ -1514,7 +1532,14 @@ class MainWindow(QMainWindow):
         # рамку вкладок, а её скруглённые углы почти сливались с фоном.
         settings_title = QLabel(tr("settings_title"))
         settings_title.setObjectName("SectionLabel")
-        layout.addWidget(settings_title)
+        # Справа от заголовка — версия и язык: правый верхний угол окна был
+        # пустым, а нижняя строка тесной.
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        title_row.addWidget(settings_title)
+        title_row.addStretch(1)
+        self._build_corner_controls(title_row)
+        layout.addLayout(title_row)
 
         # Вместо QTabWidget — кнопки-вкладки и QStackedWidget: Qt не рисует
         # дуги скруглённых углов у QTabWidget::pane, из-за чего рамка панели
@@ -1996,46 +2021,11 @@ class MainWindow(QMainWindow):
         left_column.addWidget(self.overall_progress_bar)
         action_row.addLayout(left_column, stretch=1)
 
-        # Версия в углу: видно, какая сборка запущена, без лишнего места.
-        # Меню версии открывается и с клавиатуры (Tab, затем Enter).
-        self.version_label = MenuLabel(f"v{version_string()}")
-        self.version_label.setObjectName("VersionLabel")
-        self.version_label.setToolTip(
-            tr("version_tip", app=APP_NAME, version=version_string())
-        )
-        self.version_label.mouseDoubleClickEvent = lambda _event: self._open_log_folder()
-        self.version_label.menuRequested.connect(
-            lambda position: self._on_version_menu(position, self.version_label))
-
-        # Ссылка на новую версию: появляется, только если она вышла, и
-        # встаёт на место номера версии, а не рядом — строка и так тесная.
-        self.update_button = QPushButton()
-        self.update_button.setObjectName("UpdateButton")
-        self.update_button.setVisible(False)
-        self.update_button.clicked.connect(self._on_update_clicked)
-        self.update_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.update_button.customContextMenuRequested.connect(
-            lambda position: self._on_version_menu(position, self.update_button))
-
         self.open_folder_button = QPushButton(tr("open_folder"))
         self.open_folder_button.setToolTip(tr("open_folder_tip"))
         self.open_folder_button.clicked.connect(self._on_open_output_folder)
         self.open_folder_button.setVisible(False)
 
-        # Язык рядом с версией: место редкого обращения, но на виду.
-        self.language_combo = QComboBox()
-        self.language_combo.setToolTip(tr("language_tip"))
-        self.language_combo.setAccessibleName(tr("language_tip"))
-        for code in LANGUAGE_ORDER:
-            self.language_combo.addItem(LANGUAGE_NAMES[code], code)
-        index = self.language_combo.findData(current_language())
-        if index >= 0:
-            self.language_combo.setCurrentIndex(index)
-        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
-        action_row.addWidget(self.language_combo, alignment=Qt.AlignmentFlag.AlignBottom)
-
-        action_row.addWidget(self.update_button, alignment=Qt.AlignmentFlag.AlignBottom)
-        action_row.addWidget(self.version_label, alignment=Qt.AlignmentFlag.AlignBottom)
         action_row.addWidget(self.open_folder_button, alignment=Qt.AlignmentFlag.AlignBottom)
         action_row.addWidget(self.report_button, alignment=Qt.AlignmentFlag.AlignBottom)
         action_row.addWidget(self.stop_button, alignment=Qt.AlignmentFlag.AlignBottom)
@@ -2459,13 +2449,13 @@ class MainWindow(QMainWindow):
         link_action.triggered.connect(self._on_add_link)
         if item is None:
             # По пустому месту — только добавление: остальным пунктам нужен файл.
-            menu = QMenu(self)
+            menu = PopupMenu(self)
             menu.addAction(paste_action)
             menu.addAction(link_action)
             menu.exec(self.file_list.viewport().mapToGlobal(position))
             return
         entry = self._entry(item)
-        menu = QMenu(self)
+        menu = PopupMenu(self)
 
         open_action = QAction(tr("menu_open"), self)
         open_action.triggered.connect(
@@ -2701,6 +2691,10 @@ class MainWindow(QMainWindow):
         frame = self._preview_frames.get(path)
         if frame is not None:
             self._show_preview_frame(path, frame)
+            # Кадр уже был, а что проигрывать — ещё не известно (поток
+            # предпросмотра прервали): спрашиваем у потока очереди.
+            if path not in self._motion_sources and media_motion.may_move(path):
+                self._request_queue_motion([path])
             return
         # Пока кадр готовится в фоне, прежний файл не показываем — это
         # выглядело бы как предпросмотр не того файла.
@@ -2737,29 +2731,186 @@ class MainWindow(QMainWindow):
         if path == self._preview_shown_path:
             self._show_preview_frame(path, image)
 
-    def _on_preview_animation_ready(self, path):
+    def _on_preview_animation_ready(self, path, source):
+        self._on_motion_ready(path, source)
+
+    def _on_motion_ready(self, path, source):
+        """Известно, что проигрывать для файла (или что ничего)."""
+        self._motion_sources[path] = source
         if path == self._preview_shown_path:
             self._show_preview_frame(path, self._preview_frames.get(path, QImage()))
+        self._schedule_motion_sync()
 
     def _show_preview_frame(self, path, image):
-        ext = os.path.splitext(path)[1].lower()
-        is_video = ext in VIDEO_EXTS
-        movie_path = path if ext in PREVIEW_MOVIE_EXTS else None
-        if movie_path is None:
-            # Стикер Telegram, видео, APNG и анимированный AVIF проигрываются
-            # через свою копию в WEBP, когда она готова.
-            candidate = preview_animation_path(path)
-            if os.path.isfile(candidate):
-                movie_path = candidate
-                is_video = False
+        """Кадр или анимация файла во всех предпросмотрах.
+
+        Проигрывается только короткая анимация (media_motion) и только если
+        анимация файлов не выключена; иначе — неподвижный кадр.
+        """
+        is_video = os.path.splitext(path)[1].lower() in VIDEO_EXTS
+        source = self._motion_sources.get(path) if self._animate_media else None
         for preview in self.chat_previews.values():
-            if movie_path:
-                # GIF и WEBP проигрываются: анимированный смайлик и выглядит
-                # иначе, чем его первый кадр.
-                preview.set_movie(movie_path, image if not image.isNull() else None,
-                                  from_video=ext in VIDEO_EXTS)
+            if source:
+                preview.set_movie(source, image if not image.isNull() else None,
+                                  from_video=is_video)
             else:
                 preview.set_image(image if not image.isNull() else None, is_video)
+
+    # --- анимированные миниатюры очереди ---
+
+    def _schedule_motion_sync(self, *_args):
+        """Пересчитать анимированные миниатюры — чуть позже и один раз:
+        прокрутка и добавление сотни файлов шлют сигналы пачками."""
+        timer = getattr(self, "_motion_sync_timer", None)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(QUEUE_MOTION_SYNC_MS)
+            timer.timeout.connect(self._sync_queue_motion)
+            self._motion_sync_timer = timer
+        timer.start()
+
+    def _visible_queue_items(self):
+        """Строки очереди, которые сейчас видны, — {путь: строка}."""
+        visible = {}
+        view = self.file_list
+        count = view.count()
+        if not count:
+            return visible
+        height = view.viewport().height()
+        first = view.indexAt(QPoint(4, 2)).row()
+        last = view.indexAt(QPoint(4, max(2, height - 2))).row()
+        first = 0 if first < 0 else first
+        last = count - 1 if last < 0 else last
+        for row in range(first, min(last, count - 1) + 1):
+            item = view.item(row)
+            path = self._entry(item).input_path
+            if media_motion.may_move(path):
+                visible[path] = item
+        return visible
+
+    def _sync_queue_motion(self):
+        """Анимирует миниатюры видимых строк, остальные останавливает.
+
+        Только видимые: анимация сотни миниатюр, которых никто не видит,
+        тратила бы процессор впустую. В свёрнутом окне и при выключенной
+        анимации стоят все.
+        """
+        if not getattr(self, "_ui_ready", False):
+            return
+        wanted = self._animate_media and self.isVisible() and not self.isMinimized()
+        visible = self._visible_queue_items() if wanted else {}
+        self._queue_motion_items = visible
+        for path in list(self._queue_movies):
+            if path not in visible or not self._motion_sources.get(path):
+                self._stop_queue_movie(path)
+        unknown = []
+        for path in visible:
+            source = self._motion_sources.get(path)
+            if source is None:
+                unknown.append(path)
+            elif source and path not in self._queue_movies:
+                self._start_queue_movie(path, source)
+        if unknown:
+            self._request_queue_motion(unknown)
+
+    def _request_queue_motion(self, paths):
+        for path in paths:
+            if path not in self._queue_motion_pending:
+                self._queue_motion_pending.append(path)
+        if self._queue_motion_worker is not None or not self._queue_motion_pending:
+            return
+        batch, self._queue_motion_pending = self._queue_motion_pending, []
+        worker = QueueMotionWorker(batch, self)
+        worker.ready.connect(self._on_motion_ready)
+        worker.finished.connect(self._on_queue_motion_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        self._queue_motion_worker = worker
+        worker.start()
+
+    def _on_queue_motion_worker_finished(self):
+        self._queue_motion_worker = None
+        # Пока поток работал, могли прокрутить к другим строкам.
+        pending = [path for path in self._queue_motion_pending
+                   if path not in self._motion_sources]
+        self._queue_motion_pending = []
+        if pending:
+            self._request_queue_motion(pending)
+
+    def _start_queue_movie(self, path, source):
+        movie = QMovie(source, parent=self)
+        if not movie.isValid() or movie.frameCount() == 1:
+            movie.deleteLater()
+            return
+        movie.setCacheMode(QMovie.CacheMode.CacheNone)
+        movie.frameChanged.connect(lambda _frame, key=path: self._on_queue_movie_frame(key))
+        self._queue_movies[path] = movie
+        movie.start()
+
+    def _on_queue_movie_frame(self, path):
+        movie = self._queue_movies.get(path)
+        item = self._queue_motion_items.get(path)
+        if movie is None or item is None:
+            return
+        image = movie.currentImage()
+        if image.isNull():
+            return
+        pixmap = QPixmap.fromImage(image).scaled(
+            THUMBNAIL_SIZE, THUMBNAIL_SIZE, Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation)
+        self._set_queue_icon(item, QIcon(pixmap))
+
+    def _set_queue_icon(self, item, icon):
+        # setIcon поднимает itemChanged — глушим обработчик галочек.
+        self._refreshing_items = True
+        try:
+            item.setIcon(icon)
+        except RuntimeError:
+            pass  # строка уже удалена из очереди
+        finally:
+            self._refreshing_items = False
+
+    def _stop_queue_movie(self, path):
+        """Останавливает анимацию миниатюры и возвращает неподвижный кадр."""
+        movie = self._queue_movies.pop(path, None)
+        if movie is None:
+            return
+        movie.stop()
+        movie.deleteLater()
+        static = self._thumbnail_cache.get(path)
+        for row in range(self.file_list.count()):
+            item = self.file_list.item(row)
+            if self._entry(item).input_path == path:
+                self._set_queue_icon(item, QIcon(static) if static is not None else QIcon())
+                break
+
+    def _stop_all_queue_movies(self):
+        for path in list(self._queue_movies):
+            self._stop_queue_movie(path)
+
+    def _set_media_animation(self, enabled):
+        """Переключатель «Анимация файлов» из меню версии."""
+        self._animate_media = bool(enabled)
+        self.settings_store.setValue("animate_media", self._animate_media)
+        self._sync_queue_motion()
+        if self._preview_shown_path:
+            self._show_preview_frame(self._preview_shown_path,
+                                     self._preview_frames.get(self._preview_shown_path,
+                                                              QImage()))
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        # Свернули или развернули окно — анимации останавливаются или идут.
+        if event.type() == QEvent.Type.WindowStateChange:
+            self._schedule_motion_sync()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._schedule_motion_sync()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._schedule_motion_sync()
 
     def _on_save_report(self):
         if not self._last_report:
@@ -3752,24 +3903,44 @@ class MainWindow(QMainWindow):
             return False
 
     def _on_version_menu(self, position, anchor=None):
-        menu = QMenu(self)
-        toggle = QAction(tr("update_check_toggle"), self)
-        toggle.setCheckable(True)
-        toggle.setChecked(self.settings_store.value("check_updates", True, type=bool))
-        toggle.toggled.connect(
-            lambda checked: self.settings_store.setValue("check_updates", checked)
-        )
-        menu.addAction(toggle)
+        """То же меню по правому щелчку на ссылке обновления."""
+        menu = PopupMenu(self)
+        self._fill_version_menu(menu)
+        menu.exec((anchor or self.version_button).mapToGlobal(position))
+
+    def _fill_version_menu(self, menu):
+        """Пункты меню версии — заново при каждом открытии: галочки и пункт
+        о новой версии зависят от того, что происходило с прошлого раза."""
+        menu.clear()
+        title = QAction(f"{APP_NAME} {version_string()}", menu)
+        title.setEnabled(False)
+        menu.addAction(title)
+        menu.addSeparator()
+
+        updates = QAction(tr("update_check_toggle"), menu)
+        updates.setCheckable(True)
+        updates.setChecked(self.settings_store.value("check_updates", True, type=bool))
+        updates.toggled.connect(
+            lambda checked: self.settings_store.setValue("check_updates", checked))
+        menu.addAction(updates)
+
+        animation = QAction(tr("menu_animate_media"), menu)
+        animation.setToolTip(tr("menu_animate_media_tip"))
+        animation.setCheckable(True)
+        animation.setChecked(self._animate_media)
+        animation.toggled.connect(self._set_media_animation)
+        menu.addAction(animation)
+        menu.addSeparator()
+
         if self._update_url:
             # Обновление ставится щелчком по ссылке; прочитать, что нового,
             # можно отсюда — не скачивая.
-            page_action = QAction(tr("menu_release_page"), self)
+            page_action = QAction(tr("menu_release_page"), menu)
             page_action.triggered.connect(self._open_update_page)
             menu.addAction(page_action)
-        log_action = QAction(tr("menu_open_log"), self)
+        log_action = QAction(tr("menu_open_log"), menu)
         log_action.triggered.connect(self._open_log_folder)
         menu.addAction(log_action)
-        menu.exec((anchor or self.version_label).mapToGlobal(position))
 
     def _start_update_check(self):
         """При каждом запуске спрашивает GitHub о новой версии — в фоне и молча.
@@ -3807,7 +3978,7 @@ class MainWindow(QMainWindow):
         tip = "update_tip_install" if installed_variant() else "update_tip"
         self.update_button.setToolTip(tr(tip, current=version_string(), version=version))
         self.update_button.setVisible(True)
-        self.version_label.setVisible(False)
+        self.version_button.setVisible(False)
 
     def _open_update_page(self):
         QDesktopServices.openUrl(QUrl(self._update_url or RELEASES_URL))
@@ -3896,15 +4067,18 @@ class MainWindow(QMainWindow):
         # процесс, уничтожив работающий поток (0xC0000409). Останавливаем
         # через FFmpeg самого потока: после пересборки окна (смена языка)
         # у окна уже другой объект FFmpeg, и его отмена до процесса не дойдёт.
-        for preview_worker in self.findChildren(PreviewFrameWorker):
-            if preview_worker.isRunning():
-                preview_worker.requestInterruption()
-                if preview_worker.ffmpeg is not None:
-                    preview_worker.ffmpeg.cancel()
+        for media_worker in (self.findChildren(PreviewFrameWorker)
+                             + self.findChildren(QueueMotionWorker)):
+            if media_worker.isRunning():
+                media_worker.requestInterruption()
+                if media_worker.ffmpeg is not None:
+                    media_worker.ffmpeg.cancel()
+        self._stop_all_queue_movies()
         for background in (self.scan_worker, self._thumb_worker,
                            self._image_thumb_worker, self._queue_info_worker,
                            self._preview_worker, self._update_worker,
-                           self._update_download, self._link_worker):
+                           self._update_download, self._link_worker,
+                           self._queue_motion_worker):
             try:
                 running = background is not None and background.isRunning()
             except RuntimeError:

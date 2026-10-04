@@ -14,16 +14,23 @@ versions follow [Semantic Versioning](https://semver.org/).
   member emoji 480×480 and member badge 128×128.
 - **Files from links.** Paste a link with `Ctrl+V`, drag it from a browser
   or use "Add from a link…" in the queue menu. A direct link to a file
-  works, and so does a 7TV, FFZ or Giphy page or any page with a picture. A picture copied in a browser keeps its animation.
+  works, and so does a 7TV, FFZ or Giphy page or any page with a picture.
+  A picture copied in a browser keeps its animation.
 - **One-click update.** In an installed copy the update link downloads the
   new version, checks it and installs it; the app restarts by itself.
-- **Animated previews for video, APNG and animated AVIF.** The chat preview
-  used to show a single frame of them; with a still preset it still shows
-  the frame that goes into the file.
+- **Animation in the interface.** Short animations and videos (up to 10 s)
+  play in queue thumbnails and the chat preview — now video, APNG and
+  animated AVIF too; long videos show a single frame, and a still preset
+  shows the frame that goes into the file. Only visible thumbnails play,
+  and everything pauses while the window is minimized. Turn it off in the
+  version menu.
 - **A link field above the queue**: paste a link and press Enter.
 
 ### Changed
 
+- The version number and the language moved to the top-right corner. The
+  version number opens its menu with a plain click; the menu looks like the
+  drop-down lists and appears with the same smooth animation.
 - The window is at least 1010 px wide (was 980): seven tabs need the room.
 
 ### Removed

@@ -613,6 +613,78 @@ QFrame#ComboPopup {
     border: none;
 }
 
+/* Меню — та же карточка, что у выпадающего списка: скругление, отступы,
+   подсветка пункта. Без этих правил оно было плоским системным меню и
+   выглядело чужим рядом со списками. */
+QMenu#PopupMenu {
+    background-color: $popup_bg;
+    border: 1px solid $card_border;
+    border-radius: 8px;
+    padding: 5px;
+}
+
+QMenu#PopupMenu::item {
+    background: transparent;
+    color: $text;
+    border-radius: 5px;
+    padding: 7px 16px 7px 32px;
+}
+
+QMenu#PopupMenu::item:selected {
+    background-color: $popup_hover;
+    color: $bright_text;
+}
+
+QMenu#PopupMenu::item:disabled {
+    color: $note_text;
+}
+
+QMenu#PopupMenu::separator {
+    height: 1px;
+    background: $card_border;
+    margin: 5px 8px;
+}
+
+QMenu#PopupMenu::indicator {
+    width: 14px;
+    height: 14px;
+    left: 10px;
+}
+
+QMenu#PopupMenu::indicator:checked {
+    image: url("$check_icon");
+}
+
+/* Номер версии в правом верхнем углу — тихая кнопка, открывающая меню. */
+QPushButton#VersionButton {
+    background: transparent;
+    color: $hint_text;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 22px 4px 8px;
+}
+
+QPushButton#VersionButton:hover {
+    background: $hover_bg;
+    border-color: $border_subtle;
+    color: $text;
+}
+
+QPushButton#VersionButton::menu-indicator {
+    image: url("$arrow_down_icon");
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 10px;
+    height: 6px;
+    right: 7px;
+}
+
+/* Язык в углу — компактнее обычного списка: строка заголовка не должна
+   расти, у вкладок настроек запас по высоте небольшой. */
+QComboBox#CornerCombo {
+    padding: 3px 8px;
+}
+
 /* Выпадающий список: своя карточка со скруглением и «воздухом» вокруг
    пунктов. По умолчанию Qt рисует плоский прямоугольник впритык к тексту,
    и на тёмной теме он выглядит инородно рядом со скруглёнными полями. */
@@ -924,6 +996,28 @@ def _draw_arrow(path, color, pointing_down):
     pixmap.save(path, "PNG")
 
 
+def _draw_check(path, color):
+    """Галочка для пунктов-переключателей меню (QSS её не рисует)."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
+
+    size = 28
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), 3.4)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    check = QPainterPath(QPointF(5.5, 14.5))
+    check.lineTo(11.5, 20.5)
+    check.lineTo(22.5, 8.0)
+    painter.drawPath(check)
+    painter.end()
+    pixmap.save(path, "PNG")
+
+
 # Иконки рисуются один раз на процесс: темы переключаются на каждой смене
 # вкладки, и перерисовывать PNG при этом незачем.
 _arrow_icons = None
@@ -954,6 +1048,12 @@ def _arrow_icon_paths(colors):
             continue
         # В QSS путь всегда через прямые слэши, даже на Windows.
         paths[key] = icon_path.replace("\\", "/")
+    check_path = os.path.join(assets_dir, "menu_check.png")
+    try:
+        _draw_check(check_path, colors["text"])
+        paths["check_icon"] = check_path.replace("\\", "/")
+    except Exception:
+        paths["check_icon"] = ""
     _arrow_icons = paths
     return paths
 

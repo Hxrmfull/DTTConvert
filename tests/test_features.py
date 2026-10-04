@@ -65,7 +65,7 @@ def t_version():
     assert version_string() == "1.2.2", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
-    assert version_string() in w.version_label.text(), w.version_label.text()
+    assert version_string() in w.version_button.text(), w.version_button.text()
 check("версия видна в заголовке и в интерфейсе", t_version)
 
 
@@ -449,9 +449,12 @@ def t_chat_preview():
     # Видео: кадр готовит FFmpeg в фоне.
     win.file_list.setCurrentRow(1)
     deadline = _time.monotonic() + 15
-    while not (preview.has_content() and preview._is_video) and _time.monotonic() < deadline:
+    # Короткое видео сразу сменяется анимацией — годится и кадр, и она.
+    from_video = lambda: preview._is_video or (preview._movie is not None
+                                               and preview._movie_from_video)
+    while not (preview.has_content() and from_video()) and _time.monotonic() < deadline:
         settle(50)
-    assert preview._is_video and preview.has_content(), "кадр видео не пришёл"
+    assert from_video() and preview.has_content(), "кадр видео не пришёл"
     win.file_list.clearSelection(); app.processEvents()
     assert not preview.has_content(), "без выбранного файла предпросмотр должен опустеть"
     win.close()
@@ -933,7 +936,7 @@ def t_bottom_row_fits():
             assert widget.width() >= widget.sizeHint().width() - 1, \
                 (language, widget.text() if hasattr(widget, "text") else widget, widget.width(),
                  widget.sizeHint().width())
-        assert not win.version_label.isVisible(), "ссылка на обновление должна заменить номер"
+        assert not win.version_button.isVisible(), "ссылка на обновление должна заменить номер"
         # Полный итог — в text() и в подсказке, даже если на экране сокращён.
         assert "заняло" in win.current_file_label.text()
         win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(50)
@@ -1100,6 +1103,67 @@ def t_motion_preview():
         assert not preview._is_video, f"{name}: подпись «кадр из видео» осталась"
     win.close()
 check("предпросмотр: видео и APNG проигрываются", t_motion_preview)
+
+
+def t_motion_rules_and_toggle():
+    """Анимируется только короткое; длинное видео — кадр; переключатель в меню."""
+    import media_motion
+    from main_window import TAB_TWITCH
+    from widgets import PopupMenu
+    long_video = os.path.join(WORK, "длинное.mp4")
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i",
+                    "testsrc=duration=12:size=64x64:rate=5", "-pix_fmt", "yuv420p",
+                    long_video], check=True, capture_output=True)
+    gif = os.path.join(WORK, "смайл.gif")
+    frames = [Image.new("RGB", (40, 40), (i * 50, 90, 200)) for i in range(5)]
+    frames[0].save(gif, save_all=True, append_images=frames[1:], duration=80, loop=0)
+    assert media_motion.is_short(3) and not media_motion.is_short(12)
+
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(300)
+    win._on_scan_finished([long_video, gif], [])
+    win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    preview = win.chat_previews["twitch"]
+
+    # Длинное видео: в предпросмотре кадр, в очереди не анимируется.
+    win.file_list.setCurrentRow(0)
+    deadline = _time.monotonic() + 20
+    while long_video not in win._motion_sources and _time.monotonic() < deadline:
+        settle(50)
+    assert win._motion_sources.get(long_video) == "", "длинное видео получило анимацию"
+    assert preview._movie is None and preview._is_video, "длинное видео проигрывается"
+
+    # Короткий GIF анимируется и в очереди, и в предпросмотре.
+    win.file_list.setCurrentRow(1)
+    deadline = _time.monotonic() + 10
+    while (gif not in win._queue_movies or preview._movie is None) \
+            and _time.monotonic() < deadline:
+        settle(50)
+    assert gif in win._queue_movies, "миниатюра GIF в очереди не анимирована"
+    assert long_video not in win._queue_movies
+    assert preview._movie is not None
+
+    # Меню версии: оформлено как список, в нём переключатель анимации.
+    menu = win.version_button.menu()
+    assert isinstance(menu, PopupMenu)
+    win._fill_version_menu(menu)
+    texts = [action.text() for action in menu.actions()]
+    assert any("Анимация файлов" in text for text in texts), texts
+    assert any("журнала" in text for text in texts), texts
+    toggle = next(a for a in menu.actions() if "Анимация файлов" in a.text())
+    assert toggle.isChecked()
+
+    # Выключили — всё стоит; включили — снова идёт.
+    toggle.trigger(); settle(300)
+    assert not win._queue_movies and preview._movie is None, "анимация не выключилась"
+    assert QSettings(ORGANIZATION, ORGANIZATION).value("animate_media", True, type=bool) is False
+    win._fill_version_menu(menu)
+    toggle = next(a for a in menu.actions() if "Анимация файлов" in a.text())
+    assert not toggle.isChecked()
+    toggle.trigger(); settle(300)
+    assert gif in win._queue_movies and preview._movie is not None, "анимация не вернулась"
+    win.close()
+check("анимация файлов: только короткие, переключатель в меню версии",
+      t_motion_rules_and_toggle)
 
 
 def idle_status_text():

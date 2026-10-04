@@ -178,10 +178,10 @@ STRINGS = {
     "stop_tip": ("Прервать обработку (Esc)", "Interrupt processing (Esc)"),
     "stop_off": ("Недоступно: обработка не запущена",
                  "Unavailable: processing is not running"),
-    "version_tip": ("{app} {version}\nДвойной щелчок — открыть папку журнала.\n"
-                    "Правый щелчок или Enter — меню.",
-                    "{app} {version}\nDouble-click to open the log folder.\n"
-                    "Right-click or Enter opens the menu."),
+    "version_tip": ("{app} {version}\nМеню: проверка обновлений, анимация файлов, "
+                    "папка журнала.",
+                    "{app} {version}\nMenu: update check, file animation, log folder."),
+    "version_accessible": ("Версия {version}, меню", "Version {version}, menu"),
     "tab_accessible": ("Вкладка {name}", "{name} tab"),
     "queue_tip": ("Порядок обработки меняется перетаскиванием или Alt+↑ / Alt+↓. "
                   "Обрабатываются только отмеченные галочкой файлы.",
@@ -649,6 +649,13 @@ STRINGS = {
     "update_check_toggle": ("Проверять обновления при запуске",
                             "Check for updates at startup"),
     "menu_open_log": ("Открыть папку журнала", "Open the log folder"),
+    "menu_animate_media": ("Анимация файлов в очереди и предпросмотре",
+                           "Animate files in the queue and preview"),
+    "menu_animate_media_tip": (
+        "Короткие анимации и видео (до 10 сек) проигрываются в миниатюрах очереди "
+        "и в предпросмотре. Длинные видео всегда стоят одним кадром.",
+        "Short animations and videos (up to 10 s) play in queue thumbnails and the "
+        "preview. Long videos always show a single frame."),
     "hint_dc_sticker_png": (
         "Статичный стикер Discord: PNG, ровно {size}×{size} px, квадрат "
         "с прозрачным фоном, не больше {limit}.",

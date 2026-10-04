@@ -104,13 +104,16 @@ The bundled FFmpeg is checked against `ffmpeg_checksums.txt`.
 
 ## Other
 
-- **Log:** `%LOCALAPPDATA%\DTTConvert\logs\app.log` — double-click the
-  version number to open the folder.
+- **Version menu** (the version number in the top-right corner): update
+  check, file animation, log folder
+  (`%LOCALAPPDATA%\DTTConvert\logs\app.log`).
+- **Animation:** short animations and videos (up to 10 s) play in queue
+  thumbnails and the preview; long videos show a single frame. Turn it off
+  in the version menu.
 - **Updates:** on every start the app asks GitHub about a new version and
   shows a link in place of the version number. In an installed copy a click
   downloads the installer, checks it and updates the app; a portable copy
-  opens the release page. Turn the check off in the version number menu
-  (right-click).
+  opens the release page. Turn the check off in the version menu.
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md).
 
 ## Licenses
