@@ -182,6 +182,13 @@ STRINGS = {
                     "папка журнала.",
                     "{app} {version}\nMenu: update check, file animation, log folder."),
     "version_accessible": ("Версия {version}, меню", "Version {version}, menu"),
+    "tab_order_tip": ("Изменить порядок вкладок", "Change the tab order"),
+    "tab_order_done_tip": ("Готово: сохранить порядок вкладок",
+                           "Done: keep the tab order"),
+    "tab_order_hint": ("Перетащите вкладки мышью или двигайте стрелками ← →. "
+                       "Нажмите карандаш ещё раз, чтобы закончить.",
+                       "Drag the tabs with the mouse or move them with ← →. "
+                       "Click the pencil again to finish."),
     "tab_accessible": ("Вкладка {name}", "{name} tab"),
     "queue_tip": ("Порядок обработки меняется перетаскиванием или Alt+↑ / Alt+↓. "
                   "Обрабатываются только отмеченные галочкой файлы.",
@@ -559,8 +566,8 @@ STRINGS = {
 
     # --- файлы по ссылкам ---
     "menu_add_link": ("Добавить по ссылке…", "Add from a link…"),
-    "link_placeholder": ("Ссылка на картинку, GIF или видео — и Enter",
-                         "Link to a picture, GIF or video — then Enter"),
+    "link_placeholder": ("Ссылка на картинку, GIF или видео",
+                         "Link to a picture, GIF or video"),
     "link_add": ("Добавить", "Add"),
     "link_busy": ("Идёт обработка — ссылку можно добавить, когда она закончится",
                   "Processing — the link can be added once it's done"),

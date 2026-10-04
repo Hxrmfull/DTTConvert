@@ -107,6 +107,8 @@ from widgets import (
     GroupHeaderDelegate,
     ITEM_PARTS_ROLE,
     PopupMenu,
+    TabStrip,
+    pencil_icon,
     StatusDotDelegate,
     ToggleSwitch,
     apply_button_cursor,
@@ -233,7 +235,7 @@ FORMAT_POPUP_VISIBLE_ITEMS = 12
 # списку файлов ширина нужна для длинных имён.
 SETTINGS_PANEL_MAX_WIDTH = 660
 # Поля по бокам кнопки-вкладки из таблицы стилей плюс рамка.
-TAB_BUTTON_PADDING = 22
+TAB_BUTTON_PADDING = 18
 
 EXT_TO_DEFAULT_CODE = {
     ".jpg": "jpg",
@@ -282,6 +284,29 @@ REPORT_STATUS_KEYS = {
 TAB_MAIN, TAB_TELEGRAM, TAB_TWITCH, TAB_DISCORD, TAB_WHATSAPP = 0, 1, 2, 3, 4
 # Kick и YouTube идут за WhatsApp в порядке SQUARE_PLATFORMS.
 TAB_KICK, TAB_YOUTUBE = 5, 6
+# Ключи вкладок в порядке страниц. Страницы и их темы привязаны к
+# площадкам и не переставляются — меняется только порядок кнопок.
+TAB_KEYS = ("main", "telegram", "twitch", "discord", "whatsapp") + tuple(
+    platform.key for platform in SQUARE_PLATFORMS)
+# Порядок кнопок по умолчанию; свой пользователь задаёт карандашом справа.
+DEFAULT_TAB_ORDER = ("main", "telegram", "twitch", "discord", "kick", "youtube",
+                     "whatsapp")
+
+
+def saved_tab_order(text):
+    """Порядок вкладок из настроек («main,telegram,…»).
+
+    Неизвестные ключи отбрасываются, а вкладка, которой в сохранённом
+    порядке нет (появилась в новой версии), встаёт сразу за той, за которой
+    она идёт в порядке по умолчанию, — порядок остальных не меняется.
+    """
+    keys = list(dict.fromkeys(key for key in (text or "").split(",") if key in TAB_KEYS))
+    for position, key in enumerate(DEFAULT_TAB_ORDER):
+        if key in keys:
+            continue
+        before = DEFAULT_TAB_ORDER[position - 1] if position else None
+        keys.insert(keys.index(before) + 1 if before in keys else 0, key)
+    return keys
 
 # .tgs тоже: миниатюру для него рисует rlottie (см. scaled_thumbnail).
 THUMBNAIL_IMAGE_EXTS = IMAGE_EXTS | {GIF_EXT, TGS_EXT}
@@ -299,7 +324,7 @@ PREVIEW_FRAME_SIZE = 320
 # Сколько готовых кадров предпросмотра держим про запас.
 PREVIEW_CACHE_LIMIT = 24
 # Настройки, которые «Сброс» сохраняет: они не про обработку файлов.
-PRESERVED_ON_RESET = ("language", "check_updates", "animate_media")
+PRESERVED_ON_RESET = ("language", "check_updates", "animate_media", "tab_order")
 # Сколько дней хранятся картинки, вставленные из буфера обмена.
 PASTED_KEEP_DAYS = 7
 # Адрес картинки во вставке из браузера («Копировать изображение»).
@@ -1544,8 +1569,8 @@ class MainWindow(QMainWindow):
         # Вместо QTabWidget — кнопки-вкладки и QStackedWidget: Qt не рисует
         # дуги скруглённых углов у QTabWidget::pane, из-за чего рамка панели
         # выглядела разорванной. Обычный виджет скругляется корректно.
-        tab_bar = QHBoxLayout()
-        tab_bar.setSpacing(4)
+        # Кнопки вкладок — в TabStrip: их порядок можно менять перетаскиванием.
+        self.tab_strip = TabStrip(spacing=4)
         self.tab_buttons = []
         captions = (
             (tr("tab_main"), tr("tab_main_tip")),
@@ -1577,10 +1602,29 @@ class MainWindow(QMainWindow):
             button.clicked.connect(
                 lambda _checked=False, page=index: self.settings_tabs.setCurrentIndex(page)
             )
-            tab_bar.addWidget(button)
+            self.tab_strip.add_tab(button, TAB_KEYS[index])
             self.tab_buttons.append(button)
-        tab_bar.addStretch(1)
-        layout.addLayout(tab_bar)
+        self.tab_strip.set_order(
+            saved_tab_order(self.settings_store.value("tab_order", "", type=str)))
+        self.tab_strip.orderChanged.connect(self._on_tab_order_changed)
+
+        # Карандаш справа от вкладок: включает режим правки порядка.
+        self.tab_order_button = QPushButton()
+        self.tab_order_button.setObjectName("TabEditButton")
+        self.tab_order_button.setIcon(pencil_icon(palette()["arrow"]))
+        self.tab_order_button.setIconSize(QSize(16, 16))
+        self.tab_order_button.setCheckable(True)
+        self.tab_order_button.setToolTip(tr("tab_order_tip"))
+        self.tab_order_button.setAccessibleName(tr("tab_order_tip"))
+        self.tab_order_button.setFixedSize(30, self.tab_strip.sizeHint().height())
+        self.tab_order_button.toggled.connect(self._on_tab_order_toggled)
+
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(4)
+        tab_row.addWidget(self.tab_strip)
+        tab_row.addWidget(self.tab_order_button)
+        tab_row.addStretch(1)
+        layout.addLayout(tab_row)
 
         self.settings_tabs = QStackedWidget()
         self.settings_tabs.setObjectName("SettingsCard")
@@ -3072,6 +3116,22 @@ class MainWindow(QMainWindow):
         self._update_whatsapp_hint()
         self._update_square_hints()
         self._refresh_previews()
+
+    def _on_tab_order_toggled(self, editing):
+        """Карандаш: режим перетаскивания вкладок включён или выключен."""
+        self.tab_strip.set_editing(editing)
+        tip = tr("tab_order_done_tip" if editing else "tab_order_tip")
+        self.tab_order_button.setToolTip(tip)
+        self.tab_order_button.setAccessibleName(tip)
+        if editing:
+            self._set_status(tr("tab_order_hint"), transient=True)
+        elif self.current_file_label.text() == tr("tab_order_hint"):
+            self._set_status(idle_status())
+
+    def _on_tab_order_changed(self, order):
+        """Порядок вкладок — в настройках пользователя: в реестре, куда
+        установщик не заходит, поэтому он переживает и обновления."""
+        self.settings_store.setValue("tab_order", ",".join(order))
 
     def _sync_tab_buttons(self, index=None):
         current = self.settings_tabs.currentIndex() if index is None else index

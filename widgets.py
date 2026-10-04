@@ -17,10 +17,11 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     pyqtProperty,
+    pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
-from PyQt6.QtWidgets import (QAbstractButton, QCheckBox, QLabel, QMenu, QStyle,
-                             QStyledItemDelegate, QStyleOptionViewItem)
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PyQt6.QtWidgets import (QAbstractButton, QCheckBox, QLabel, QMenu, QSizePolicy,
+                             QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget)
 
 from styles import palette
 
@@ -252,6 +253,213 @@ class PopupMenu(QMenu):
             self._appear = None
         self.setWindowOpacity(1.0)
         super().hideEvent(event)
+
+
+def pencil_icon(color, size=32):
+    """Значок карандаша для кнопки «порядок вкладок» — рисуется кодом,
+    чтобы быть чётким при любом масштабе экрана."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), size * 0.085)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    unit = size / 32.0
+    # Корпус карандаша под 45°: от кончика внизу слева к торцу вверху справа.
+    body = QPainterPath(QPointF(7 * unit, 25 * unit))
+    body.lineTo(9 * unit, 18 * unit)
+    body.lineTo(21 * unit, 6 * unit)
+    body.lineTo(26 * unit, 11 * unit)
+    body.lineTo(14 * unit, 23 * unit)
+    body.closeSubpath()
+    painter.drawPath(body)
+    # Граница металлического ободка у торца и черта у кончика.
+    painter.drawLine(QPointF(18 * unit, 9 * unit), QPointF(23 * unit, 14 * unit))
+    painter.drawLine(QPointF(9 * unit, 18 * unit), QPointF(14 * unit, 23 * unit))
+    painter.end()
+    return QIcon(pixmap)
+
+
+class TabStrip(QWidget):
+    """Строка вкладок, порядок которой можно менять перетаскиванием.
+
+    Кнопки расставляются вручную, а не QHBoxLayout: при перетаскивании
+    соседние вкладки плавно отъезжают на новые места (анимация позиции), а
+    раскладка дёргала бы их скачком. В обычном режиме вкладки просто
+    нажимаются; в режиме правки (set_editing) нажатие хватает вкладку,
+    её можно тащить влево и вправо, а стрелки ← → двигают вкладку с
+    фокусом. Порядок — список ключей вкладок, сигнал orderChanged.
+    """
+
+    orderChanged = pyqtSignal(list)
+    MOVE_MS = 160
+
+    def __init__(self, spacing=4, parent=None):
+        super().__init__(parent)
+        self._spacing = spacing
+        self._buttons = []
+        self._keys = {}
+        self._editing = False
+        self._drag = None
+        self._animations = {}
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    # --- состав и порядок ---
+
+    def add_tab(self, button, key):
+        button.setParent(self)
+        self._buttons.append(button)
+        self._keys[button] = key
+        button.installEventFilter(self)
+        self._relayout(animate=False)
+
+    def order(self):
+        return [self._keys[button] for button in self._buttons]
+
+    def set_order(self, keys):
+        by_key = {self._keys[button]: button for button in self._buttons}
+        ordered = [by_key[key] for key in keys if key in by_key]
+        ordered += [button for button in self._buttons if button not in ordered]
+        self._buttons = ordered
+        self._relayout(animate=False)
+        self._fix_focus_order()
+
+    def is_editing(self):
+        return self._editing
+
+    def set_editing(self, editing):
+        self._editing = bool(editing)
+        self._drag = None
+        for button in self._buttons:
+            # Пунктирная рамка (правило QPushButton#TabButton[editing]) —
+            # видно, что вкладки сейчас можно двигать.
+            button.setProperty("editing", self._editing)
+            button.style().unpolish(button)
+            button.style().polish(button)
+            if self._editing:
+                button.setCursor(Qt.CursorShape.OpenHandCursor)
+            else:
+                apply_button_cursor(button)
+        self._relayout(animate=True)
+
+    # --- раскладка ---
+
+    @staticmethod
+    def _width_of(button):
+        return max(button.sizeHint().width(), button.minimumWidth())
+
+    def _slots(self):
+        x = 0
+        slots = []
+        for button in self._buttons:
+            slots.append(x)
+            x += self._width_of(button) + self._spacing
+        return slots
+
+    def sizeHint(self):
+        if not self._buttons:
+            return QSize(0, 0)
+        width = sum(self._width_of(button) for button in self._buttons)
+        width += self._spacing * (len(self._buttons) - 1)
+        height = max(button.sizeHint().height() for button in self._buttons)
+        return QSize(width, height)
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._relayout(animate=False)
+
+    def _relayout(self, animate=True, skip=None):
+        height = max(self.height(), self.sizeHint().height())
+        for button, x in zip(self._buttons, self._slots()):
+            button.resize(self._width_of(button), height)
+            if button is skip:
+                continue
+            target = QPoint(x, 0)
+            running = self._animations.pop(button, None)
+            if running is not None:
+                running.stop()
+            if animate and button.pos() != target:
+                animation = QPropertyAnimation(button, b"pos", self)
+                animation.setDuration(self.MOVE_MS)
+                animation.setStartValue(button.pos())
+                animation.setEndValue(target)
+                animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+                self._animations[button] = animation
+                animation.start()
+            else:
+                button.move(target)
+        self.updateGeometry()
+
+    def _fix_focus_order(self):
+        """Tab проходит вкладки в том порядке, в каком они стоят."""
+        for first, second in zip(self._buttons, self._buttons[1:]):
+            QWidget.setTabOrder(first, second)
+
+    def _move(self, button, index):
+        current = self._buttons.index(button)
+        index = max(0, min(index, len(self._buttons) - 1))
+        if index == current:
+            return False
+        self._buttons.pop(current)
+        self._buttons.insert(index, button)
+        return True
+
+    # --- перетаскивание ---
+
+    def eventFilter(self, watched, event):
+        if not self._editing or watched not in self._keys:
+            return False
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            running = self._animations.pop(watched, None)
+            if running is not None:
+                running.stop()
+            self._drag = (watched, event.position().x())
+            watched.raise_()
+            watched.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return True
+        if kind == QEvent.Type.MouseMove and self._drag and self._drag[0] is watched:
+            x = watched.x() + event.position().x() - self._drag[1]
+            x = max(0.0, min(x, float(self.width() - watched.width())))
+            watched.move(int(x), 0)
+            # Место — та позиция среди остальных вкладок, чей левый край ближе
+            # всего к перетаскиваемой. Сравнение центров не годилось: узкая
+            # вкладка не могла обогнать широкую — её центр у самого края
+            # всё равно оставался правее центра соседки.
+            others = [other for other in self._buttons if other is not watched]
+            index, nearest, left = 0, None, 0
+            for position in range(len(others) + 1):
+                distance = abs(x - left)
+                if nearest is None or distance < nearest:
+                    index, nearest = position, distance
+                if position < len(others):
+                    left += self._width_of(others[position]) + self._spacing
+            if self._move(watched, index):
+                self._relayout(animate=True, skip=watched)
+            return True
+        if kind == QEvent.Type.MouseButtonRelease and self._drag and self._drag[0] is watched:
+            self._drag = None
+            watched.setCursor(Qt.CursorShape.OpenHandCursor)
+            self._relayout(animate=True)
+            self._fix_focus_order()
+            self.orderChanged.emit(self.order())
+            return True
+        if kind in (QEvent.Type.MouseButtonDblClick, QEvent.Type.MouseButtonRelease,
+                    QEvent.Type.MouseMove):
+            return True
+        if kind == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            step = -1 if event.key() == Qt.Key.Key_Left else 1
+            if self._move(watched, self._buttons.index(watched) + step):
+                self._relayout(animate=True)
+                self._fix_focus_order()
+                self.orderChanged.emit(self.order())
+            return True
+        return False
 
 
 def round_combo_popup(combo):

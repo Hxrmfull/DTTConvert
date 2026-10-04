@@ -5,6 +5,19 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.4.0 — 2026-10-04
+
+### Added
+
+- **Tab order is up to you.** The pencil to the right of the tabs turns on
+  editing: drag the tabs with the mouse (or move them with ← →), click the
+  pencil again to finish. The order is kept between launches and updates.
+
+### Changed
+
+- Default tab order: General, Telegram, Twitch, Discord, Kick, YouTube,
+  WhatsApp.
+
 ## 1.3.0 — 2026-10-04
 
 ### Added
