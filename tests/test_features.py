@@ -61,8 +61,8 @@ QSettings(ORGANIZATION, ORGANIZATION).clear(); pin_language()  # чистый т
 w = MainWindow(); w.output_dir = WORK; w.output_dir_edit.setText(WORK); w.show(); app.processEvents()
 
 def t_version():
-    assert APP_VERSION == "1.4.0", APP_VERSION
-    assert version_string() == "1.4.0", version_string()
+    assert APP_VERSION == "1.4.1", APP_VERSION
+    assert version_string() == "1.4.1", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
     assert version_string() in w.version_button.text(), w.version_button.text()
@@ -1120,7 +1120,12 @@ def t_motion_rules_and_toggle():
     assert media_motion.is_short(3) and not media_motion.is_short(12)
 
     win = MainWindow(); win.resize(1140, 790); win.show()
-    win.activateWindow(); settle(300)  # анимации идут только в активном окне
+    # Анимации идут только в активном окне. Активность подставляем, а не
+    # включаем по-настоящему: activateWindow забрал бы фокус у программы,
+    # в которой человек работает, пока идут тесты.
+    active = {"value": True}
+    win.isActiveWindow = lambda: active["value"]
+    settle(300)
     win._on_scan_finished([long_video, gif], [])
     win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
     preview = win.chat_previews["twitch"]
@@ -1164,22 +1169,15 @@ def t_motion_rules_and_toggle():
     assert gif in win._queue_movies and preview._movie is not None, "анимация не вернулась"
 
     # Окно стало неактивным (щёлкнули по другому окну) — всё стоит.
-    from PyQt6.QtWidgets import QWidget
     from PyQt6.QtGui import QMovie
-    other = QWidget(); other.resize(200, 100); other.show(); other.activateWindow()
-    deadline = _time.monotonic() + 5
-    while win.isActiveWindow() and _time.monotonic() < deadline:
-        settle(50)
-    settle(300)
+    active["value"] = False
+    win._sync_queue_motion(); settle(100)
     assert not win._queue_movies, "в неактивном окне миниатюры анимируются"
     assert preview._movie.state() != QMovie.MovieState.Running, "предпросмотр не на паузе"
-    win.activateWindow()
-    deadline = _time.monotonic() + 5
-    while not win._queue_movies and _time.monotonic() < deadline:
-        settle(50)
+    active["value"] = True
+    win._sync_queue_motion(); settle(100)
     assert gif in win._queue_movies, "после возврата в окно анимация не пошла"
     assert preview._movie.state() == QMovie.MovieState.Running
-    other.close()
     win.close()
 check("анимация файлов: только короткие, переключатель в меню версии",
       t_motion_rules_and_toggle)

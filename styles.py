@@ -653,6 +653,10 @@ QMenu#PopupMenu::item {
     padding: 7px 16px 7px 32px;
 }
 
+QMenu#PopupMenu[checks="false"]::item {
+    padding-left: 14px;
+}
+
 QMenu#PopupMenu::item:selected {
     background-color: $popup_hover;
     color: $bright_text;
@@ -927,7 +931,7 @@ QToolTip {
     background-color: $hover_bg;
     color: $text;
     border: 1px solid $card_border;
-    padding: 4px;
+    padding: 6px 8px;
 }
 
 /* Ссылка на новую версию рядом с номером версии: заметная, но не кричащая. */

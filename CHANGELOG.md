@@ -5,6 +5,24 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.4.1 — 2026-10-04
+
+### Changed
+
+- Labels on the General tab stand next to their fields ("Rotation",
+  "Audio", "Bitrate" and others used to sit far from them).
+- The empty queue shows a drawn icon and the hints as one centred block.
+- All queue rows have the same height; thumbnails are fitted into a square.
+- The queue and settings headers are aligned; the link field no longer
+  grabs focus at startup.
+- Menus without check marks have no empty margin on the left.
+
+### Fixed
+
+- The "Add from a link" window had English OK/Cancel buttons; standard Qt
+  texts (message box buttons, the copy/paste menu of text fields) are now
+  in Russian too.
+
 ## 1.4.0 — 2026-10-04
 
 ### Added
