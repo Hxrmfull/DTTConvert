@@ -879,7 +879,7 @@ def t_queue_row_fits():
     from errors import LocalizedRuntimeError
     long_name = os.path.join(WORK, "очень_длинное_имя_файла_для_проверки_очереди_" * 2 + ".png")
     Image.new("RGB", (64, 64), (0, 120, 200)).save(long_name)
-    win = MainWindow(); win.resize(980, 680); win.show(); settle(100)
+    win = MainWindow(); win.resize(1010, 680); win.show(); settle(100)
     win._on_scan_finished([long_name, img], []); settle(100)
     item = win.file_list.item(1)
     entry = item.data(DATA_ROLE)
@@ -906,7 +906,7 @@ check("строка очереди: без прокрутки вбок, форм
 
 def t_bottom_row_fits():
     for language in ("ru", "en"):
-        win = MainWindow(); win.resize(980, 680); win.show(); settle(100)
+        win = MainWindow(); win.resize(1010, 680); win.show(); settle(100)
         win.language_combo.setCurrentIndex(win.language_combo.findData(language)); settle(100)
         win.report_button.setVisible(True)
         win.open_folder_button.setVisible(True)
@@ -925,7 +925,7 @@ def t_bottom_row_fits():
         assert "заняло" in win.current_file_label.text()
         win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(50)
         win.close()
-check("низ окна: при 980 px ничего не обрезано", t_bottom_row_fits)
+check("низ окна: при 1010 px ничего не обрезано", t_bottom_row_fits)
 
 
 def t_numbers_and_plurals():

@@ -5,6 +5,24 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Kick and YouTube tabs**, each with its own theme and chat preview.
+  Kick: emote PNG 500×500 or animated GIF, sub badge 36/72 px. YouTube:
+  member emoji 480×480 and member badge 128×128.
+- **Files from links.** Paste a link with `Ctrl+V`, drag it from a browser
+  or use "Add from a link…" in the queue menu. A direct link to a file
+  works, and so does a 7TV, BTTV, FFZ or Giphy page or any page with a
+  picture. A picture copied in a browser keeps its animation.
+- **One-click update.** In an installed copy the update link downloads the
+  new version, checks it and installs it; the app restarts by itself.
+
+### Changed
+
+- The window is at least 1010 px wide (was 980): seven tabs need the room.
+
 ## 1.2.2 — 2026-10-04
 
 ### Changed

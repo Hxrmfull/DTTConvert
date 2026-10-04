@@ -38,7 +38,7 @@ from styles import palette, theme_for_tab
 
 # Фон окна общий для всех тем, а карточка и рамка у вкладок площадок свои.
 WINDOW_BG = palette()["window_bg"]
-SIZES = [(1140, 790), (1050, 730), (1000, 700), (980, 680)]
+SIZES = [(1140, 790), (1080, 730), (1040, 700), (1010, 680)]
 
 window = MainWindow()
 window.show()

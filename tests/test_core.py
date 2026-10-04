@@ -990,6 +990,36 @@ def t_whatsapp():
         raise AssertionError("анимированный стикер из картинки должен давать ошибку")
 check("N6 WhatsApp: стикер, анимированный стикер и иконка набора по лимитам", t_whatsapp)
 
+def t_kick_youtube():
+    ONE_MB = 1_000_000
+    d=os.path.join(WORK,"kick"); made=run_job(IMG,"kick_emote",d)
+    assert made==["img_kick.png"], made
+    with Image.open(os.path.join(d,made[0])) as im: assert im.size==(500,500) and im.format=="PNG"
+    assert os.path.getsize(os.path.join(d,made[0]))<ONE_MB
+    d=os.path.join(WORK,"kick_gif"); made=run_job(LONG,"kick_emote_gif",d)
+    out=os.path.join(d,made[0])
+    assert made[0].endswith("_kick.gif"), made
+    with Image.open(out) as im:
+        assert im.size==(256,256) and im.n_frames>1, (im.size, im.n_frames)
+    assert os.path.getsize(out)<ONE_MB, os.path.getsize(out)
+    d=os.path.join(WORK,"kick_badge"); made=run_job(IMG,"kick_badge_pack",d)
+    assert made==["img_kick_badge_36.png","img_kick_badge_72.png"], made
+    d=os.path.join(WORK,"yt"); made=run_job(SRC,"youtube_emoji",d)
+    with Image.open(os.path.join(d,made[0])) as im:
+        assert im.size==(480,480) and im.format=="PNG" and getattr(im,"n_frames",1)==1
+    assert made==["люси1_yt_emoji.png"], made
+    d=os.path.join(WORK,"yt_badge"); made=run_job(IMG,"youtube_badge",d)
+    with Image.open(os.path.join(d,made[0])) as im: assert im.size==(128,128)
+    try:
+        run_job(IMG,"kick_emote_gif",os.path.join(WORK,"kick_bad"))
+    except AssertionError as e:
+        assert "только из видео" in str(e), e
+    else:
+        raise AssertionError("анимированный смайлик Kick из картинки должен давать ошибку")
+    assert worker.is_static_target("kick_emote") and not worker.is_static_target("kick_emote_gif")
+    assert worker.is_static_target("youtube_emoji")
+check("N6a Kick и YouTube: смайлики, GIF, значки и эмодзи по требованиям", t_kick_youtube)
+
 def t_fill_square():
     fit=os.path.join(WORK,"fit"); fill=os.path.join(WORK,"fill")
     run_job(WIDE,"discord_emoji_png",fit)

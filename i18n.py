@@ -481,6 +481,60 @@ STRINGS = {
         "WhatsApp pack icon: PNG {size}×{size} px, no larger than {limit} KB. "
         "One is needed per pack."),
 
+    # --- Kick ---
+    "tab_kick_tip": ("Готовые пресеты смайликов и значков Kick",
+                     "Ready-made Kick emote and badge presets"),
+    "col_kick_emotes": ("СМАЙЛИКИ", "EMOTES"),
+    "col_kick_more": ("ЗНАЧКИ", "BADGES"),
+    "preset_kick_emote": ("Смайлик PNG 500 px", "Emote PNG 500 px"),
+    "preset_kick_emote_gif": ("Анимированный GIF", "Animated GIF"),
+    "preset_kick_badge_pack": ("Значок подписки (2 файла)", "Sub badge (2 files)"),
+    "lbl_kick_emote": ("Kick: смайлик PNG 500", "Kick: emote PNG 500"),
+    "lbl_kick_emote_gif": ("Kick: анимированный смайлик GIF", "Kick: animated emote GIF"),
+    "lbl_kick_badge_pack": ("Kick: значок подписки", "Kick: sub badge"),
+    "hint_kick_emote": (
+        "Смайлик Kick: PNG {size}×{size} px, квадрат с прозрачным фоном, меньше "
+        "{limit}. В чате Kick сам уменьшает его до 112, 56 и 28 px.",
+        "Kick emote: PNG {size}×{size} px, a square with a transparent background, "
+        "under {limit}. Kick scales it down to 112, 56 and 28 px for the chat."),
+    "hint_kick_emote_gif": (
+        "Анимированный смайлик Kick: GIF {size}×{size} px, меньше {limit} — FPS "
+        "подбирается автоматически. Kick принимает до 500 px, но в чате смайлик не "
+        "крупнее 112 px, а GIF на 500 px почти никогда не укладывается в лимит. "
+        "Нужно видео, GIF или анимированная картинка.",
+        "Kick animated emote: GIF {size}×{size} px, under {limit} — the FPS is chosen "
+        "automatically. Kick takes up to 500 px, but the chat never shows an emote "
+        "larger than 112 px, and a 500 px GIF almost never fits the limit. Needs a "
+        "video, GIF or animated picture."),
+    "hint_kick_badge_pack": (
+        "Значок подписки Kick: PNG с прозрачным фоном, комплект {sizes} px. Размер "
+        "Kick не называет; обычно загружают 36×36, а 72 — для чётких экранов.",
+        "Kick sub badge: PNG with a transparent background, a {sizes} px set. Kick "
+        "doesn't name a size; 36×36 is the usual upload, 72 is for sharp screens."),
+    "preview_msg_kick": ("вот это момент", "what a moment"),
+
+    # --- YouTube ---
+    "tab_youtube_tip": ("Готовые пресеты эмодзи и значков спонсоров YouTube",
+                        "Ready-made YouTube member emoji and badge presets"),
+    "col_yt_members": ("ДЛЯ СПОНСОРОВ КАНАЛА", "FOR CHANNEL MEMBERS"),
+    "preset_youtube_emoji": ("Эмодзи 480 px", "Emoji 480 px"),
+    "preset_youtube_badge": ("Значок спонсора 128 px", "Member badge 128 px"),
+    "lbl_youtube_emoji": ("YouTube: эмодзи 480", "YouTube: emoji 480"),
+    "lbl_youtube_badge": ("YouTube: значок спонсора 128", "YouTube: member badge 128"),
+    "hint_youtube_emoji": (
+        "Эмодзи канала YouTube: PNG {size}×{size} px (YouTube принимает от 48 до 480), "
+        "меньше {limit}. Анимацию YouTube не показывает — из видео и GIF берётся "
+        "первый кадр.",
+        "YouTube channel emoji: PNG {size}×{size} px (YouTube takes 48 to 480), under "
+        "{limit}. YouTube doesn't animate emoji — a video or GIF gives its first frame."),
+    "hint_youtube_badge": (
+        "Значок спонсора YouTube: PNG {size}×{size} px (не меньше 32), меньше {limit}. "
+        "В чате он показывается в 16 px — мелкие детали пропадут.",
+        "YouTube member badge: PNG {size}×{size} px (at least 32), under {limit}. The "
+        "chat shows it at 16 px, so fine details get lost."),
+    "preview_msg_youtube": ("лучший стрим", "best stream"),
+    "preview_msg_youtube2": ("всем привет", "hi everyone"),
+
     # --- режим вписывания в квадрат ---
     "fill_square": ("Заполнить квадрат (обрезать края)", "Fill the square (crop edges)"),
     "fill_square_tip": ("Включено — картинка заполняет квадрат целиком, лишнее по "
@@ -637,8 +691,9 @@ STRINGS = {
     "lbl_dc_emoji_png": ("Discord: эмодзи PNG", "Discord: PNG emoji"),
     "lbl_dc_emoji_gif": ("Discord: эмодзи GIF", "Discord: GIF emoji"),
 
-    "kb": ("{value} КБ", "{value} KB"),
-    "mb": ("{value} МБ", "{value} MB"),
+    # Неразрывный пробел: число не отрывается от единицы при переносе строки.
+    "kb": ("{value} КБ", "{value} KB"),
+    "mb": ("{value} МБ", "{value} MB"),
 
     # --- ошибки обработки (errors.LocalizedError) ---
     "err_source_missing": ("Исходный файл не найден: {name}",

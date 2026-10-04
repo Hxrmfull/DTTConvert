@@ -55,7 +55,23 @@ SCENES = {
                  "muted": "#8597a8", "name": "#64b5ef", "accent": "#2ea6ff"},
     "whatsapp": {"bg": "#0b141a", "panel": "#202c33", "text": "#e9edef",
                  "muted": "#8696a0", "name": "#25d366", "accent": "#00a884"},
+    "kick": {"bg": "#0b0e0f", "panel": "#191b1f", "text": "#ffffff",
+             "muted": "#a3a7ab", "name": "#53fc18", "accent": "#53fc18",
+             "input": "#24272c"},
+    # Имя спонсора в живом чате YouTube зелёное, обычного зрителя — серое.
+    "youtube": {"bg": "#0f0f0f", "panel": "#212121", "text": "#f1f1f1",
+                "muted": "#aaaaaa", "name": "#2ba640", "accent": "#ff0000",
+                "input": "#272727"},
 }
+
+# Чат Kick: значок у ника и цвета ников.
+KICK_BADGE_SIZE = 18
+KICK_NAME_COLORS = ("#53fc18", "#f2a83b")
+# Живой чат YouTube: аватар, значок спонсора у имени, эмодзи в строке.
+YOUTUBE_AVATAR_SIZE = 24
+YOUTUBE_BADGE_SIZE = 16
+YOUTUBE_INLINE_EMOJI = 24
+YOUTUBE_AVATAR_COLORS = ("#7e57c2", "#00897b")
 
 # Прозрачность макета, пока пресет площадки не выбран.
 INACTIVE_OPACITY = 0.3
@@ -72,6 +88,45 @@ def _scaled(rect, points):
     """Точки в долях квадрата rect (0..1) → координаты на экране."""
     return [QPointF(rect.left() + x * rect.width(), rect.top() + y * rect.height())
             for x, y in points]
+
+
+def draw_star_badge(painter, rect, color):
+    """Обычный значок подписчика: белая звезда на скруглённом квадрате."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    radius = rect.width() * 0.22
+    painter.drawRoundedRect(rect, radius, radius)
+    centre = rect.center()
+    outer, inner = rect.width() * 0.34, rect.width() * 0.15
+    points = []
+    for index in range(10):
+        angle = math.pi * index / 5 - math.pi / 2
+        length = outer if index % 2 == 0 else inner
+        points.append(QPointF(centre.x() + length * math.cos(angle),
+                              centre.y() + length * math.sin(angle)))
+    # На светлой подложке (зелёный Kick) звезда тёмная, на тёмной — белая.
+    light = color.lightnessF() > 0.55
+    painter.setBrush(QColor("#0b0e0f") if light else QColor("#ffffff"))
+    painter.drawPolygon(QPolygonF(points))
+    painter.restore()
+
+
+def draw_letter_avatar(painter, rect, color, letter):
+    """Аватар без картинки: первая буква имени в цветном круге."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(color)
+    painter.drawEllipse(rect)
+    font = QFont(painter.font())
+    font.setPixelSize(int(rect.height() * 0.55))
+    font.setBold(True)
+    painter.setFont(font)
+    painter.setPen(QColor("#ffffff"))
+    painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), letter.upper())
+    painter.restore()
 
 
 def draw_twitch_gem_badge(painter, rect):
@@ -451,6 +506,8 @@ class ChatPreview(QWidget):
             "discord": self._paint_discord,
             "telegram": self._paint_telegram,
             "whatsapp": self._paint_whatsapp,
+            "kick": self._paint_kick,
+            "youtube": self._paint_youtube,
         }.get(self.platform, self._paint_discord)
         paint(painter, rect, scene)
 
@@ -605,6 +662,102 @@ class ChatPreview(QWidget):
         painter.drawText(button, int(Qt.AlignmentFlag.AlignCenter), label)
         draw_gear_outline(painter, QRectF(button.left() - 26, row.top() + 3, 16, 16),
                           QColor(scene["muted"]))
+
+    def _paint_kick(self, painter, rect, scene):
+        """Чат Kick: две строки сообщений и поле ввода под ними.
+
+        Пресет значка подписки ставит картинку пользователя на место
+        значка у ника, смайлики — в текст сообщений.
+        """
+        badge_preset = self._code == "kick_badge_pack"
+        inline, zoom = (0, 72) if badge_preset else (28, 112)
+        right = self._zoom_tile(painter, rect, scene, zoom)
+        chat = QRectF(rect.left() + PADDING, rect.top() + PADDING,
+                      right - rect.left() - PADDING, rect.height() - PADDING * 2)
+        line_height = max(KICK_BADGE_SIZE + 6, inline)
+        name_font = self._font(13, bold=True)
+        text_font = self._font(13)
+        baseline_shift = (line_height + QFontMetrics(text_font).ascent()) / 2 - 2
+        y = chat.top()
+        for row, (name, color) in enumerate((("streamer", KICK_NAME_COLORS[0]),
+                                             ("Viewer42", KICK_NAME_COLORS[1]))):
+            if y + line_height > chat.bottom() + 1:
+                break
+            x = chat.left()
+            badge_rect = QRectF(x, y + (line_height - KICK_BADGE_SIZE) / 2,
+                                KICK_BADGE_SIZE, KICK_BADGE_SIZE)
+            if badge_preset:
+                painter.drawPixmap(badge_rect.topLeft().toPoint(),
+                                   self._emote(KICK_BADGE_SIZE))
+            else:
+                draw_star_badge(painter, badge_rect, QColor(scene["accent"]))
+            x += KICK_BADGE_SIZE + 4
+            x = self._draw_text(painter, x, y + baseline_shift, name, color, name_font)
+            x = self._draw_text(painter, x, y + baseline_shift, ": ", scene["text"], text_font)
+            if row == 0 or not inline:
+                x = self._draw_text(painter, x, y + baseline_shift,
+                                    tr("preview_msg_kick") + " ", scene["text"], text_font)
+            for _ in range((1 if row == 0 else 2) if inline else 0):
+                if x + inline > chat.right():
+                    break
+                painter.drawPixmap(int(x), int(y + (line_height - inline) / 2),
+                                   self._emote(inline))
+                x += inline + 4
+            y += line_height + 6
+        field_top = chat.bottom() - TWITCH_INPUT_HEIGHT
+        if field_top >= y:
+            field = QRectF(chat.left(), field_top, chat.width(), TWITCH_INPUT_HEIGHT)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(scene["input"]))
+            painter.drawRoundedRect(field, 6, 6)
+            baseline = field.top() + (field.height() + QFontMetrics(text_font).ascent()) / 2 - 2
+            self._draw_text(painter, field.left() + 10, baseline, tr("preview_send_message"),
+                            scene["muted"], text_font)
+            draw_smiley_outline(painter, QRectF(field.right() - 24, field.top() + 7, 16, 16),
+                                QColor(scene["muted"]))
+
+    def _paint_youtube(self, painter, rect, scene):
+        """Живой чат YouTube: аватар, имя, значок спонсора и сообщение.
+
+        Пресет значка ставит картинку пользователя у имени спонсора,
+        эмодзи — в текст сообщения, как YouTube показывает их в чате.
+        """
+        badge_preset = self._code == "youtube_badge"
+        inline = 0 if badge_preset else YOUTUBE_INLINE_EMOJI
+        right = self._zoom_tile(painter, rect, scene, 64 if badge_preset else 112)
+        chat = QRectF(rect.left() + PADDING, rect.top() + PADDING,
+                      right - rect.left() - PADDING, rect.height() - PADDING * 2)
+        line_height = max(YOUTUBE_AVATAR_SIZE, inline) + 4
+        name_font = self._font(13, bold=True)
+        text_font = self._font(13)
+        baseline_shift = (line_height + QFontMetrics(text_font).ascent()) / 2 - 2
+        rows = (("Alex", scene["name"], True), ("Maria", scene["muted"], False))
+        y = chat.top()
+        for row, (name, color, member) in enumerate(rows):
+            if y + line_height > chat.bottom() + 1:
+                break
+            x = chat.left()
+            avatar = QRectF(x, y + (line_height - YOUTUBE_AVATAR_SIZE) / 2,
+                            YOUTUBE_AVATAR_SIZE, YOUTUBE_AVATAR_SIZE)
+            draw_letter_avatar(painter, avatar, QColor(YOUTUBE_AVATAR_COLORS[row]), name[0])
+            x += YOUTUBE_AVATAR_SIZE + 8
+            x = self._draw_text(painter, x, y + baseline_shift, name, color, name_font) + 4
+            if member:
+                badge_rect = QRectF(x, y + (line_height - YOUTUBE_BADGE_SIZE) / 2,
+                                    YOUTUBE_BADGE_SIZE, YOUTUBE_BADGE_SIZE)
+                if badge_preset:
+                    painter.drawPixmap(badge_rect.topLeft().toPoint(),
+                                       self._emote(YOUTUBE_BADGE_SIZE))
+                else:
+                    draw_star_badge(painter, badge_rect, QColor(scene["name"]))
+                x += YOUTUBE_BADGE_SIZE + 6
+            text = tr("preview_msg_youtube") if row == 0 else tr("preview_msg_youtube2")
+            x = self._draw_text(painter, x, y + baseline_shift, text + " ",
+                                scene["text"], text_font)
+            if inline and x + inline <= chat.right():
+                painter.drawPixmap(int(x), int(y + (line_height - inline) / 2),
+                                   self._emote(inline))
+            y += line_height + 6
 
     def _paint_discord(self, painter, rect, scene):
         sticker = self._code.startswith("discord_sticker")

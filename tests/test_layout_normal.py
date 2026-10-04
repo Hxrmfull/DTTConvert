@@ -35,7 +35,26 @@ w = MainWindow()
 w.resize(*DEFAULT_WINDOW_SIZE)
 w.show()
 
-TABS = {0: "Основная", 1: "Telegram", 2: "Twitch", 3: "Discord", 4: "WhatsApp"}
+TABS = {0: "Основная", 1: "Telegram", 2: "Twitch", 3: "Discord", 4: "WhatsApp",
+        5: "Kick", 6: "YouTube"}
+
+def tab_bar_problems(window, prefix=""):
+    """Кнопки вкладок не налезают друг на друга и не выходят за строку.
+
+    Каждая кнопка держит ширину своей подписи, поэтому при нехватке места
+    они не сжимаются, а наезжают одна на другую — проверка «подпись
+    помещается в кнопку» этого не видит.
+    """
+    found = []
+    buttons = window.tab_buttons
+    for left, right in zip(buttons, buttons[1:]):
+        if left.geometry().right() >= right.geometry().left():
+            found.append(f"{prefix}вкладки «{left.text()}» и «{right.text()}» налезают")
+    last = buttons[-1]
+    if last.geometry().right() > last.parentWidget().width():
+        found.append(f"{prefix}вкладка «{last.text()}» выходит за край")
+    return found
+
 TYPES = (QLabel, QPushButton, QAbstractSpinBox, QCheckBox, QComboBox)
 
 def run():
@@ -112,12 +131,13 @@ def run():
         app.processEvents()
         bold = QFont(button.font())
         bold.setWeight(QFont.Weight.DemiBold)
-        needed = QFontMetrics(bold).horizontalAdvance(button.text()) + 26
+        needed = QFontMetrics(bold).horizontalAdvance(button.text()) + 22
         if button.width() < needed:
             problems.append(
                 f"вкладка «{button.text()}»: подпись обрезана "
                 f"({button.width()} < {needed})"
             )
+    problems.extend(tab_bar_problems(w))
 
     w.settings_tabs.setCurrentIndex(0); app.processEvents()
     if not w.fps_checkbox.isVisible():
@@ -202,12 +222,13 @@ def run():
         app.processEvents()
         bold = _QFont(button.font())
         bold.setWeight(_QFont.Weight.DemiBold)
-        needed = _QFontMetrics(bold).horizontalAdvance(button.text()) + 26
+        needed = _QFontMetrics(bold).horizontalAdvance(button.text()) + 22
         if button.width() < needed:
             problems.append(
                 f"[en] вкладка «{button.text()}»: подпись обрезана "
                 f"({button.width()} < {needed})"
             )
+    problems.extend(tab_bar_problems(w, "[en] "))
     w.language_combo.setCurrentIndex(w.language_combo.findData(was))
     app.processEvents()
 

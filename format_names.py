@@ -6,6 +6,7 @@
 """
 
 from i18n import tr
+from stream_platforms import FORMAT_LABEL_KEYS as SQUARE_FORMAT_LABEL_KEYS
 
 # Названия обычных форматов от языка не зависят.
 PLAIN_FORMAT_NAMES = {
@@ -39,6 +40,8 @@ PLATFORM_LABEL_KEYS = {
     "whatsapp_animated": "lbl_wa_animated",
     "whatsapp_tray": "lbl_wa_tray",
 }
+# Kick и YouTube: ключи подписей строятся по кодам (lbl_<код>).
+PLATFORM_LABEL_KEYS.update(SQUARE_FORMAT_LABEL_KEYS)
 
 
 def format_label(code):

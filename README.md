@@ -3,7 +3,7 @@
 **English** · [Русский](README.ru.md)
 
 Converts images, GIFs, videos and stickers for **D**iscord, **T**elegram and
-**T**witch, as well as WhatsApp, 7TV and BTTV. Presets pick the size, frame
+**T**witch, as well as WhatsApp, Kick, YouTube, 7TV and BTTV. Presets pick the size, frame
 rate and file size on their own, so the platform accepts the file on the
 first try.
 
@@ -42,13 +42,17 @@ GIF, stickers and audio, put `ffmpeg.exe` and `ffprobe.exe` next to
 - **Output:** JPG, PNG, WEBP, BMP, AVIF, GIF, APNG, MP4, WebM, AVI,
   audio (MP3, M4A, WAV) and frame-by-frame PNG export.
 - **Platform presets** — see the table below. The preview shows the result
-  right inside a Telegram, Twitch, Discord or WhatsApp chat mock-up.
+  right inside a Telegram, Twitch, Discord, WhatsApp, Kick or YouTube chat
+  mock-up.
 - **Editing:** resize, frame rate, trim, rotate, flip, quality, file size
   limit, keep or drop audio. "Fill the square" crops the edges instead of
   adding transparent margins.
 - **Queue:** drag and drop files and folders, paste from the clipboard
   (`Ctrl+V`), per-file settings, parallel processing, CSV report.
   The source file is never overwritten.
+- **Links:** paste a link with `Ctrl+V`, drag it from a browser or use
+  "Add from a link…" in the queue menu. A direct link to a file works,
+  and so does a 7TV, BTTV, FFZ or Giphy page or any page with a picture.
 - **Shortcuts:** `Ctrl+O` — add, `Delete` — remove, `Alt+↑/↓` — reorder,
   `Ctrl+Enter` — start, `Esc` — stop. The whole window works with `Tab`.
 
@@ -64,6 +68,8 @@ GIF, stickers and audio, put `ffmpeg.exe` and `ffprobe.exe` next to
 | Twitch | Sub badge, channel points | PNG, 18/36/72 and 28/56/112 sets, each ≤ 25 KB |
 | 7TV / BTTV | Emote | WEBP/GIF or PNG, 128 / 112 px, ≤ 1 MB |
 | WhatsApp | Sticker | WEBP 512×512, ≤ 100 KB; animated ≤ 10 s, ≤ 500 KB; pack icon PNG 96×96 |
+| Kick | Emote, sub badge | PNG 500×500 or GIF 256×256, < 1 MB; badge PNG 36/72 set |
+| YouTube | Member emoji, badge | PNG 480×480 and 128×128, < 1 MB (YouTube doesn't animate them) |
 
 A `.tgs` sticker converts to any of these formats, to GIF and to video;
 converting back to `.tgs` is not possible — it is a vector format.
@@ -101,8 +107,10 @@ The bundled FFmpeg is checked against `ffmpeg_checksums.txt`.
 - **Log:** `%LOCALAPPDATA%\DTTConvert\logs\app.log` — double-click the
   version number to open the folder.
 - **Updates:** on every start the app asks GitHub about a new version and
-  shows a link in place of the version number; it never downloads anything by
-  itself. Turn it off in the version number menu (right-click).
+  shows a link in place of the version number. In an installed copy a click
+  downloads the installer, checks it and updates the app; a portable copy
+  opens the release page. Turn the check off in the version number menu
+  (right-click).
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md).
 
 ## Licenses

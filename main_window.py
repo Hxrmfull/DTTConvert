@@ -74,6 +74,8 @@ from errors import first_line, message_text
 import url_import
 from styles import (THEME_MAIN, build_stylesheet, palette, theme_for_tab)
 from chat_preview import ChatPreview
+from stream_platforms import (SQUARE_PLATFORMS, is_square_platform_format,
+                              square_hint, square_platform, square_preset_label)
 from whatsapp_utils import (
     WHATSAPP_PRESET_COLUMNS,
     WHATSAPP_STATIC,
@@ -230,7 +232,7 @@ FORMAT_POPUP_VISIBLE_ITEMS = 12
 # списку файлов ширина нужна для длинных имён.
 SETTINGS_PANEL_MAX_WIDTH = 660
 # Поля по бокам кнопки-вкладки из таблицы стилей плюс рамка.
-TAB_BUTTON_PADDING = 30
+TAB_BUTTON_PADDING = 22
 
 EXT_TO_DEFAULT_CODE = {
     ".jpg": "jpg",
@@ -277,6 +279,8 @@ REPORT_STATUS_KEYS = {
 }
 
 TAB_MAIN, TAB_TELEGRAM, TAB_TWITCH, TAB_DISCORD, TAB_WHATSAPP = 0, 1, 2, 3, 4
+# Kick и YouTube идут за WhatsApp в порядке SQUARE_PLATFORMS.
+TAB_KICK, TAB_YOUTUBE = 5, 6
 
 # .tgs тоже: миниатюру для него рисует rlottie (см. scaled_thumbnail).
 THUMBNAIL_IMAGE_EXTS = IMAGE_EXTS | {GIF_EXT, TGS_EXT}
@@ -321,6 +325,7 @@ DEFAULT_WINDOW_SIZE = (1140, 790)
 # Названия площадок для подписей: не переводятся.
 PLATFORM_TITLES = {"telegram": "Telegram", "twitch": "Twitch",
                    "discord": "Discord", "whatsapp": "WhatsApp"}
+PLATFORM_TITLES.update({platform.key: platform.title for platform in SQUARE_PLATFORMS})
 
 
 @dataclass
@@ -797,7 +802,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(window_title())
         self.resize(*DEFAULT_WINDOW_SIZE)
         # Ниже этого размера панели начинают наезжать друг на друга.
-        self.setMinimumSize(980, 680)
+        # 1010 — очередь (около 430 px) и панель настроек с семью
+        # вкладками (530 px) рядом, без обрезки карточки справа.
+        self.setMinimumSize(1010, 680)
 
         self._loading_settings = False
         self._refreshing_items = False
@@ -1271,6 +1278,47 @@ class MainWindow(QMainWindow):
         self._add_platform_footer(layout, "whatsapp")
         return tab
 
+    def _build_square_platform_tab(self, platform):
+        """Вкладка Kick или YouTube: выноска, колонки пресетов, предпросмотр.
+
+        Собирается по описанию из stream_platforms — как вкладка WhatsApp,
+        только без отдельного кода на каждую площадку.
+        """
+        tab = QWidget()
+        tab.setObjectName("SettingsPage")
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(4, 6, 4, 4)
+        layout.setSpacing(5)
+
+        self.square_format_codes[platform.key] = platform.default
+        hint_label = QLabel()
+        hint_label.setObjectName("HintCallout")
+        hint_label.setWordWrap(True)
+        hint_label.setMinimumHeight(42)
+        layout.addWidget(hint_label)
+        self.square_hint_labels[platform.key] = hint_label
+
+        presets_layout = QGridLayout()
+        presets_layout.setHorizontalSpacing(10)
+        buttons = {}
+        for column, (caption_key, codes) in enumerate(platform.columns):
+            header = QLabel(tr(caption_key))
+            header.setObjectName("GroupCaption")
+            presets_layout.addWidget(header, 0, column)
+            for row, code in enumerate(codes, start=1):
+                button = self._make_preset_button(
+                    square_preset_label(code), code, self._apply_square_preset
+                )
+                buttons[code] = button
+                presets_layout.addWidget(button, row, column)
+        # Одна колонка не должна растягиваться на всю ширину карточки.
+        if len(platform.columns) == 1:
+            presets_layout.setColumnStretch(1, 1)
+        layout.addLayout(presets_layout)
+        self.square_preset_buttons[platform.key] = buttons
+        self._add_platform_footer(layout, platform.key)
+        return tab
+
     def _add_platform_footer(self, layout, platform):
         """Низ вкладки площадки: тумблер «заполнить квадрат», примечание
         о том, к чему применяется пресет, и предпросмотр в макете чата.
@@ -1333,6 +1381,8 @@ class MainWindow(QMainWindow):
         self.twitch_format_code = "twitch_static_112"
         self.discord_format_code = "discord_sticker_png"
         self.whatsapp_format_code = WHATSAPP_STATIC
+        self.square_format_codes = {platform.key: platform.default
+                                    for platform in SQUARE_PLATFORMS}
         self.settings_tabs.setCurrentIndex(TAB_MAIN)
         self._load_settings_into_panel(JobSettings())
         self.current_file_label.setText(tr("reset_done"))
@@ -1342,12 +1392,18 @@ class MainWindow(QMainWindow):
         # предпросмотры — по площадке; заполняются при сборке вкладок.
         self.fill_toggles = {}
         self.chat_previews = {}
+        # Kick и YouTube: выбранный пресет, кнопки и выноска — по площадке.
+        self.square_format_codes = {}
+        self.square_preset_buttons = {}
+        self.square_hint_labels = {}
         container = QWidget()
         # Панель целиком перекрашивается под вкладку площадки (см. _apply_tab_theme).
         self.right_panel = container
         # Ширина с запасом: вертикальная полоса прокрутки съедает 12 px, и без
         # запаса из-за неё появлялась ещё и горизонтальная.
-        container.setMinimumWidth(500)
+        # 530 — чтобы строка из семи вкладок помещалась без наложения
+        # (tests/test_layout_min.py, tab_bar_problems).
+        container.setMinimumWidth(530)
         container.setMaximumWidth(SETTINGS_PANEL_MAX_WIDTH)
         layout = QVBoxLayout(container)
         # Небольшой отступ слева, иначе рамка вплотную примыкает к списку файлов.
@@ -1364,7 +1420,7 @@ class MainWindow(QMainWindow):
         # дуги скруглённых углов у QTabWidget::pane, из-за чего рамка панели
         # выглядела разорванной. Обычный виджет скругляется корректно.
         tab_bar = QHBoxLayout()
-        tab_bar.setSpacing(6)
+        tab_bar.setSpacing(4)
         self.tab_buttons = []
         captions = (
             (tr("tab_main"), tr("tab_main_tip")),
@@ -1372,7 +1428,8 @@ class MainWindow(QMainWindow):
             ("Twitch", tr("tab_twitch_tip")),
             ("Discord", tr("tab_discord_tip")),
             ("WhatsApp", tr("tab_whatsapp_tip")),
-        )
+        ) + tuple((platform.title, tr(f"tab_{platform.key}_tip"))
+                  for platform in SQUARE_PLATFORMS)
         for index, (caption, tip) in enumerate(captions):
             button = QPushButton(caption)
             button.setObjectName("TabButton")
@@ -1436,6 +1493,8 @@ class MainWindow(QMainWindow):
         self.settings_tabs.addWidget(self._build_twitch_tab())
         self.settings_tabs.addWidget(self._build_discord_tab())
         self.settings_tabs.addWidget(self._build_whatsapp_tab())
+        for platform in SQUARE_PLATFORMS:
+            self.settings_tabs.addWidget(self._build_square_platform_tab(platform))
         self._ui_ready = True
 
         apply_layout = QHBoxLayout()
@@ -2502,6 +2561,7 @@ class MainWindow(QMainWindow):
             "discord": self.discord_format_code,
             "whatsapp": self.whatsapp_format_code,
         }
+        codes.update(self.square_format_codes)
         degrees = [value for _caption, value in rotate_options()]
         rotate = degrees[self.rotate_combo.currentIndex()]
         flip_h, flip_v = flip_options()[self.flip_combo.currentIndex()][1]
@@ -2705,6 +2765,13 @@ class MainWindow(QMainWindow):
                                 self.whatsapp_format_code, "WhatsApp")
         self._sync_preset_buttons()
 
+    def _update_square_hints(self):
+        for platform in SQUARE_PLATFORMS:
+            code = self.square_format_codes[platform.key]
+            self._set_platform_hint(platform.key, self.square_hint_labels[platform.key],
+                                    square_hint(code), code, platform.title)
+        self._sync_preset_buttons()
+
     def _set_platform_hint(self, platform, label, hint, code, title):
         """Выноска вкладки площадки.
 
@@ -2723,6 +2790,7 @@ class MainWindow(QMainWindow):
         self._update_twitch_hint()
         self._update_discord_hint()
         self._update_whatsapp_hint()
+        self._update_square_hints()
         self._refresh_previews()
 
     def _sync_tab_buttons(self, index=None):
@@ -2742,7 +2810,9 @@ class MainWindow(QMainWindow):
             (self.twitch_preset_buttons, self.twitch_format_code),
             (self.discord_preset_buttons, self.discord_format_code),
             (self.whatsapp_preset_buttons, self.whatsapp_format_code),
-        )
+        ) + tuple((self.square_preset_buttons.get(platform.key, {}),
+                   self.square_format_codes.get(platform.key))
+                  for platform in SQUARE_PLATFORMS)
         for buttons, active_code in groups:
             for code, button in buttons.items():
                 button.setChecked(
@@ -2817,7 +2887,8 @@ class MainWindow(QMainWindow):
     def _is_platform_format(self, output_format=None):
         fmt = output_format or self._selected_format
         return (is_telegram_format(fmt) or is_twitch_format(fmt)
-                or is_discord_format(fmt) or is_whatsapp_format(fmt))
+                or is_discord_format(fmt) or is_whatsapp_format(fmt)
+                or is_square_platform_format(fmt))
 
     def _load_settings_into_panel(self, settings):
         self._loading_settings = True
@@ -2835,6 +2906,8 @@ class MainWindow(QMainWindow):
                 self.discord_format_code = output_format
             elif is_whatsapp_format(output_format):
                 self.whatsapp_format_code = output_format
+            elif square_platform(output_format):
+                self.square_format_codes[square_platform(output_format).key] = output_format
             self._select_format_in_combo(output_format)
             for toggle in self.fill_toggles.values():
                 toggle.setChecked(settings.fill_square)
@@ -2979,6 +3052,10 @@ class MainWindow(QMainWindow):
         self._set_selected_format(format_code)
         self._report_preset_applied(self._store_panel_settings(self._preset_targets()))
 
+    def _apply_square_preset(self, format_code):
+        self._set_selected_format(format_code)
+        self._report_preset_applied(self._store_panel_settings(self._preset_targets()))
+
     def _fill_square_checked(self):
         toggle = next(iter(self.fill_toggles.values()), None)
         return bool(toggle and toggle.isChecked())
@@ -3018,6 +3095,8 @@ class MainWindow(QMainWindow):
             self.discord_format_code = code
         elif is_whatsapp_format(code):
             self.whatsapp_format_code = code
+        elif square_platform(code):
+            self.square_format_codes[square_platform(code).key] = code
         was_loading = self._loading_settings
         self._loading_settings = True
         try:
