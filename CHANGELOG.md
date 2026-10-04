@@ -9,9 +9,7 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **New app icon**: the letters DTT on a stack of stickers. The loop arrow
-  in the D and the arrow on the last T stand for conversion, the stickers
-  for what the app turns files into.
+- Updated app icon.
 
 ## 1.2.1 — 2026-10-04
 
