@@ -43,6 +43,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QCheckBox,
     QComboBox,
     QSpinBox,
     QDoubleSpinBox,
@@ -227,7 +228,7 @@ FORMAT_POPUP_MAX_HEIGHT = 420
 # а «1250,50 сек» у длинного ролика (или «3599,90» у Telegram) уже нет:
 # кнопки счётчика съедали хвост. Строки с этими полями свободны по ширине.
 TRIM_FIELD_WIDTH = 108
-TG_FRAGMENT_FIELD_WIDTH = 90
+TG_FRAGMENT_FIELD_WIDTH = TRIM_FIELD_WIDTH
 # Строк в списке форматов без прокрутки (вместе с заголовками групп):
 # столько, чтобы список целиком (со скруглённым низом) помещался в
 # предел высоты выше — при 13 строках нижний край обрезался.
@@ -327,7 +328,8 @@ PREVIEW_FRAME_SIZE = 320
 # Сколько готовых кадров предпросмотра держим про запас.
 PREVIEW_CACHE_LIMIT = 24
 # Настройки, которые «Сброс» сохраняет: они не про обработку файлов.
-PRESERVED_ON_RESET = ("language", "check_updates", "animate_media", "tab_order")
+PRESERVED_ON_RESET = ("language", "check_updates", "animate_media", "tab_order",
+                      "platform_themes")
 # Сколько дней хранятся картинки, вставленные из буфера обмена.
 PASTED_KEEP_DAYS = 7
 # Адрес картинки во вставке из браузера («Копировать изображение»).
@@ -1246,9 +1248,15 @@ class MainWindow(QMainWindow):
         queue_title.setObjectName("SectionLabel")
         header_layout.addWidget(queue_title)
         header_layout.addStretch(1)
-        self.queue_counter_label = QLabel(tr("queue_empty"))
-        self.queue_counter_label.setObjectName("HintLabel")
-        header_layout.addWidget(self.queue_counter_label)
+        # Галочка «все» с числом файлов: отмечает или снимает отметки со
+        # всей очереди. Заменила кнопки «Отметить все» и «Снять отметки» —
+        # они занимали под списком целый ряд.
+        self.queue_check_all = QCheckBox(tr("queue_empty"))
+        self.queue_check_all.setObjectName("QueueCheckAll")
+        self.queue_check_all.setTristate(True)
+        self.queue_check_all.setToolTip(tr("queue_check_all_tip"))
+        self.queue_check_all.clicked.connect(self._on_queue_check_all)
+        header_layout.addWidget(self.queue_check_all)
         layout.addWidget(self.queue_header)
 
         # Поле для ссылки на виду: Ctrl+V и пункт меню очереди находят не все.
@@ -1309,29 +1317,13 @@ class MainWindow(QMainWindow):
         clear_button.setToolTip(tr("clear_list_tip"))
         clear_button.clicked.connect(self._on_clear_list)
 
-        # Порядок обработки меняется перетаскиванием и клавишами Alt+↑/↓,
-        # а на месте прежних кнопок — управление галочками: обрабатываются
-        # только отмеченные файлы.
-        check_all_button = QPushButton(tr("check_all"))
-        check_all_button.setToolTip(tr("check_all_tip"))
-        check_all_button.clicked.connect(lambda: self._set_all_checked(True))
-
-        uncheck_all_button = QPushButton(tr("uncheck_all"))
-        uncheck_all_button.setObjectName("QuietButton")
-        uncheck_all_button.setToolTip(tr("uncheck_all_tip"))
-        uncheck_all_button.clicked.connect(lambda: self._set_all_checked(False))
-        # Гаснут, когда делать нечего: «Отметить все» при всех отмеченных.
-        self.check_all_button = check_all_button
-        self.uncheck_all_button = uncheck_all_button
         self.remove_button = remove_button
         self.clear_button = clear_button
 
-        # Сетка из 6 колонок: первый ряд — три кнопки, второй — две,
-        # так оба ряда получаются одинаковой ширины без «висящих» кнопок.
+        # Один ряд кнопок: отметками управляет галочка «все» в заголовке.
+        # Ряд стоит вровень со строкой «Применить…» под настройками.
         for column, button in enumerate((add_button, remove_button, clear_button)):
-            buttons_grid.addWidget(button, 0, column * 2, 1, 2)
-        buttons_grid.addWidget(check_all_button, 1, 0, 1, 3)
-        buttons_grid.addWidget(uncheck_all_button, 1, 3, 1, 3)
+            buttons_grid.addWidget(button, 0, column)
         layout.addLayout(buttons_grid)
 
         return container
@@ -1419,9 +1411,12 @@ class MainWindow(QMainWindow):
                 self.telegram_preset_buttons[code] = button
                 presets_layout.addWidget(button, row, column)
         layout.addLayout(presets_layout)
+        # Строка фрагмента — отдельная мысль, не продолжение кнопок пресетов.
+        layout.addSpacing(6)
 
-        # Компактная строка «Фрагмент: с N сек, длиной M сек» — два отдельных
-        # подписанных поля не помещались в ширину панели.
+        # Компактная строка «Фрагмент: с N сек длиной M сек». Единицы — в
+        # самих полях, как у обрезки на «Основной»: раньше «сек» стояло то
+        # в поле, то снаружи.
         duration_layout = QHBoxLayout()
         duration_layout.setSpacing(6)
         self.tg_start_label = QLabel(tr("tg_fragment"))
@@ -1429,6 +1424,7 @@ class MainWindow(QMainWindow):
         self.tg_start_spin.setRange(0.0, 3600.0)
         self.tg_start_spin.setSingleStep(0.1)
         self.tg_start_spin.setFixedWidth(TG_FRAGMENT_FIELD_WIDTH)
+        self.tg_start_spin.setSuffix(tr("seconds_suffix"))
         self.tg_start_spin.setToolTip(
             tr("tg_start_tip")
         )
@@ -1442,6 +1438,7 @@ class MainWindow(QMainWindow):
         self.tg_duration_spin.setSingleStep(0.1)
         self.tg_duration_spin.setValue(MAX_VIDEO_DURATION_SEC)
         self.tg_duration_spin.setFixedWidth(TG_FRAGMENT_FIELD_WIDTH)
+        self.tg_duration_spin.setSuffix(tr("seconds_suffix"))
         self.tg_duration_spin.setToolTip(
             tr("tg_duration_tip")
         )
@@ -1450,8 +1447,6 @@ class MainWindow(QMainWindow):
         self.tg_duration_label.setBuddy(self.tg_duration_spin)
         duration_layout.addWidget(self.tg_duration_label)
         duration_layout.addWidget(self.tg_duration_spin)
-        self.tg_units_label = QLabel(tr("seconds_suffix").strip())
-        duration_layout.addWidget(self.tg_units_label)
         duration_layout.addStretch(1)
         layout.addLayout(duration_layout)
 
@@ -1940,9 +1935,14 @@ class MainWindow(QMainWindow):
         self.trim_end_spin.valueChanged.connect(self._on_trim_changed)
         self.trim_start_label.setBuddy(self.trim_start_spin)
         self.trim_end_label.setBuddy(self.trim_end_spin)
+        # Итог справа: сколько секунд выйдет и из скольких — без счёта в уме.
+        self.trim_summary_label = QLabel("")
+        self.trim_summary_label.setObjectName("HintLabel")
         for widget in (self.trim_start_label, self.trim_start_spin,
                        self.trim_end_label, self.trim_end_spin):
             trim_row.addWidget(widget)
+        trim_row.addSpacing(4)
+        trim_row.addWidget(self.trim_summary_label)
         trim_row.addStretch(1)
         grid.addLayout(trim_row, 6, 0, 1, 4)
 
@@ -2170,8 +2170,9 @@ class MainWindow(QMainWindow):
         browse_button = QPushButton(tr("browse"))
         browse_button.clicked.connect(self._on_browse_output_dir)
         output_layout.addWidget(browse_button)
-        layout.addLayout(output_layout)
 
+        # «Перезаписывать» — про сохранение, поэтому в строке папки, а не
+        # над строкой состояния, с которой она никак не связана.
         self.overwrite_checkbox = ToggleSwitch(tr("overwrite"))
         self.overwrite_checkbox.setChecked(
             self.settings_store.value("overwrite", False, type=bool)
@@ -2179,11 +2180,14 @@ class MainWindow(QMainWindow):
         self.overwrite_checkbox.setToolTip(
             tr("overwrite_tip")
         )
+        output_layout.addSpacing(6)
+        output_layout.addWidget(self.overwrite_checkbox)
+        layout.addLayout(output_layout)
 
         # Сокращается многоточием, а не распирает строку: итог обработки
         # рядом с кнопками «Открыть папку» и «Отчёт» в неё не помещался.
         self.current_file_label = ElidedLabel(idle_status())
-        self.current_file_label.setObjectName("HintLabel")
+        self.current_file_label.setObjectName("StatusLabel")
 
         self.overall_progress_bar = QProgressBar()
         self.overall_progress_bar.setRange(0, 100)
@@ -2212,9 +2216,11 @@ class MainWindow(QMainWindow):
 
         left_column = QVBoxLayout()
         left_column.setSpacing(4)
-        left_column.addWidget(self.overwrite_checkbox)
+        # Строка состояния — по центру напротив кнопок «Старт/Остановить».
+        left_column.addStretch(1)
         left_column.addWidget(self.current_file_label)
         left_column.addWidget(self.overall_progress_bar)
+        left_column.addStretch(1)
         action_row.addLayout(left_column, stretch=1)
 
         self.open_folder_button = QPushButton(tr("open_folder"))
@@ -2370,6 +2376,11 @@ class MainWindow(QMainWindow):
         item.setData(DATA_ROLE, entry)
         self._update_queue_counter()
 
+    def _on_queue_check_all(self):
+        """Галочка «все»: все отмечены — снять, иначе — отметить все."""
+        total = self.file_list.count()
+        self._set_all_checked(len(self._checked_rows()) < total)
+
     def _checked_rows(self):
         return [
             row for row in range(self.file_list.count())
@@ -2379,7 +2390,7 @@ class MainWindow(QMainWindow):
     def _update_queue_counter(self):
         total = self.file_list.count()
         if not total:
-            self.queue_counter_label.setText(tr("queue_empty"))
+            self.queue_check_all.setText(tr("queue_empty"))
             # Сообщение о применённом пресете относится к файлам, которых
             # больше нет, — иначе оно висит и путает.
             if self.worker is None:
@@ -2387,13 +2398,18 @@ class MainWindow(QMainWindow):
         else:
             checked = len(self._checked_rows())
             if checked == total:
-                self.queue_counter_label.setText(tr("queue_count", total=total))
+                self.queue_check_all.setText(tr("queue_count", total=total))
             else:
-                self.queue_counter_label.setText(tr("queue_checked", checked=checked, total=total))
+                self.queue_check_all.setText(tr("queue_checked", checked=checked, total=total))
         self.file_list.set_placeholder_visible(total == 0)
         checked = len(self._checked_rows()) if total else 0
-        self.check_all_button.setEnabled(checked < total)
-        self.uncheck_all_button.setEnabled(checked > 0)
+        state = (Qt.CheckState.Unchecked if not checked
+                 else Qt.CheckState.Checked if checked == total
+                 else Qt.CheckState.PartiallyChecked)
+        self.queue_check_all.blockSignals(True)
+        self.queue_check_all.setCheckState(state)
+        self.queue_check_all.blockSignals(False)
+        self.queue_check_all.setEnabled(total > 0)
         self.clear_button.setEnabled(total > 0)
         self.remove_button.setEnabled(bool(self.file_list.selectedItems()))
 
@@ -2670,6 +2686,9 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction(paste_action)
         menu.addAction(link_action)
+        # Удаление — отдельно от остального, чертой: его не нажмёшь,
+        # промахнувшись мимо «Добавить по ссылке».
+        menu.addSeparator()
         remove_action = QAction(tr("menu_remove"), self)
         remove_action.triggered.connect(self._on_remove_selected)
         menu.addAction(remove_action)
@@ -3081,6 +3100,11 @@ class MainWindow(QMainWindow):
         for path in list(self._queue_movies):
             self._stop_queue_movie(path)
 
+    def _set_platform_themes(self, enabled):
+        """Переключатель «Цвета площадок на вкладках» из меню версии."""
+        self.settings_store.setValue("platform_themes", bool(enabled))
+        self._apply_tab_theme(animate=True)
+
     def _set_media_animation(self, enabled):
         """Переключатель «Анимация файлов» из меню версии."""
         self._animate_media = bool(enabled)
@@ -3211,7 +3235,6 @@ class MainWindow(QMainWindow):
         self.tg_duration_spin.setEnabled(is_video)
         self.tg_start_label.setEnabled(is_video)
         self.tg_start_spin.setEnabled(is_video)
-        self.tg_units_label.setEnabled(is_video)
         self.tg_source_label.setVisible(is_video)
         self._sync_preset_buttons()
 
@@ -3330,6 +3353,9 @@ class MainWindow(QMainWindow):
         отступы и шрифты у них общие, поэтому вёрстка не сдвигается.
         """
         theme = theme_for_tab(self.settings_tabs.currentIndex())
+        # Темы площадок выключены в меню версии — весь интерфейс одного цвета.
+        if not self.settings_store.value("platform_themes", True, type=bool):
+            theme = THEME_MAIN
         if theme == self._current_theme:
             return
         snapshot = self.right_panel.grab() if animate else None
@@ -3609,7 +3635,18 @@ class MainWindow(QMainWindow):
 
     def _on_trim_changed(self):
         self._clamp_trim_range()
+        self._update_trim_summary()
         self._on_settings_changed()
+
+    def _update_trim_summary(self):
+        """«= фрагмент 3 сек из 12,4» справа от полей обрезки."""
+        length = max(0.0, self.trim_end_spin.value() - self.trim_start_spin.value())
+        total = self._selected_source_duration()
+        if total:
+            text = tr("trim_summary_of", length=number(length), total=number(total))
+        else:
+            text = tr("trim_summary", length=number(length))
+        self.trim_summary_label.setText(text)
 
     def _on_quality_toggle(self):
         # Качество и целевой размер спорят друг с другом: размером управляет
@@ -3689,8 +3726,9 @@ class MainWindow(QMainWindow):
         self.trim_checkbox.setEnabled(trim_allowed)
         trim_on = trim_allowed and self.trim_checkbox.isChecked()
         for widget in (self.trim_start_label, self.trim_start_spin,
-                       self.trim_end_label, self.trim_end_spin):
+                       self.trim_end_label, self.trim_end_spin, self.trim_summary_label):
             widget.setEnabled(trim_on)
+        self._update_trim_summary()
 
         # Поворот и отражение применяются и поверх пресетов площадок.
         self.rotate_label.setEnabled(has_picture)
@@ -4133,6 +4171,13 @@ class MainWindow(QMainWindow):
         updates.toggled.connect(
             lambda checked: self.settings_store.setValue("check_updates", checked))
         menu.addAction(updates)
+
+        themes = QAction(tr("menu_platform_themes"), menu)
+        themes.setToolTip(tr("menu_platform_themes_tip"))
+        themes.setCheckable(True)
+        themes.setChecked(self.settings_store.value("platform_themes", True, type=bool))
+        themes.toggled.connect(self._set_platform_themes)
+        menu.addAction(themes)
 
         animation = QAction(tr("menu_animate_media"), menu)
         animation.setToolTip(tr("menu_animate_media_tip"))

@@ -23,6 +23,10 @@ STRINGS = {
     "queue_title": ("Очередь обработки", "Processing queue"),
     "settings_title": ("Параметры обработки", "Processing options"),
     "queue_empty": ("Очередь пуста", "Queue is empty"),
+    "queue_check_all_tip": ("Отметить все файлы очереди или снять со всех отметки. "
+                            "Обрабатываются только отмеченные.",
+                            "Check or uncheck every file in the queue. Only checked "
+                            "files are processed."),
     "queue_count": ("Файлов в очереди: {total}", "Files in queue: {total}"),
     "queue_checked": ("Отмечено {checked} из {total}", "Checked {checked} of {total}"),
     "drop_hint": ("Перетащите файлы или папки сюда\n"
@@ -39,10 +43,6 @@ STRINGS = {
                            "Remove the selected files from the queue (Delete)"),
     "clear_list": ("Очистить список", "Clear list"),
     "clear_list_tip": ("Убрать из очереди все файлы", "Remove every file from the queue"),
-    "check_all": ("Отметить все", "Check all"),
-    "check_all_tip": ("Обрабатывать все файлы очереди", "Process every file in the queue"),
-    "uncheck_all": ("Снять отметки", "Uncheck all"),
-    "uncheck_all_tip": ("Снять отметки со всех файлов", "Uncheck every file"),
 
     # --- вкладки ---
     "tab_main": ("Основная", "General"),
@@ -75,8 +75,10 @@ STRINGS = {
                     "Trim (video, GIF and audio)"),
     "trim_tip": ("Вырезать фрагмент: с какой секунды начать и на какой закончить.",
                  "Cut a fragment: which second to start at and which to end at."),
-    "trim_start": ("Начало", "From"),
-    "trim_end": ("Конец", "To"),
+    "trim_start": ("С", "From"),
+    "trim_end": ("по", "to"),
+    "trim_summary": ("= фрагмент {length} сек", "= {length} s clip"),
+    "trim_summary_of": ("= фрагмент {length} сек из {total}", "= {length} s of {total}"),
     "seconds_suffix": (" сек", " s"),
     "rotate": ("Поворот", "Rotation"),
     "rotate_tip": ("Поворот по часовой стрелке.", "Clockwise rotation."),
@@ -365,7 +367,7 @@ STRINGS = {
     "preset_applied_none": ("Пресет выбран. Добавьте файлы — он применится к ним.",
                             "Preset selected. Add files and it will be applied."),
     "tg_fragment": ("Фрагмент: с", "Fragment: from"),
-    "tg_fragment_len": ("сек, длиной", "s, lasting"),
+    "tg_fragment_len": ("длиной", "lasting"),
     "tg_start_tip": ("С какой секунды исходника брать фрагмент. Для файлов длиннее "
                      "трёх секунд так выбирается нужный момент.",
                      "Which second of the source the fragment starts at. This is how "
@@ -660,6 +662,12 @@ STRINGS = {
     "update_check_toggle": ("Проверять обновления при запуске",
                             "Check for updates at startup"),
     "menu_open_log": ("Открыть папку журнала", "Open the log folder"),
+    "menu_platform_themes": ("Цвета площадок на вкладках", "Platform colours on tabs"),
+    "menu_platform_themes_tip": (
+        "Вкладки Telegram, Twitch, Discord и других площадок окрашиваются в их "
+        "цвета. Выключите, чтобы весь интерфейс был одного цвета.",
+        "Telegram, Twitch, Discord and other platform tabs take their colours. Turn "
+        "it off to keep the whole interface in one colour."),
     "menu_animate_media": ("Анимация файлов в очереди и предпросмотре",
                            "Animate files in the queue and preview"),
     "menu_animate_media_tip": (

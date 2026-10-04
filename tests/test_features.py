@@ -61,8 +61,8 @@ QSettings(ORGANIZATION, ORGANIZATION).clear(); pin_language()  # чистый т
 w = MainWindow(); w.output_dir = WORK; w.output_dir_edit.setText(WORK); w.show(); app.processEvents()
 
 def t_version():
-    assert APP_VERSION == "1.4.1", APP_VERSION
-    assert version_string() == "1.4.1", version_string()
+    assert APP_VERSION == "1.5.0", APP_VERSION
+    assert version_string() == "1.5.0", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
     assert version_string() in w.version_button.text(), w.version_button.text()
@@ -880,12 +880,12 @@ def t_disabled_fields_look_disabled():
     assert on_spin - off_spin > 60, (on_spin, off_spin)
     assert on_label - off_label > 60, (on_label, off_label)
     # Тихая кнопка (#QuietButton) тоже гаснет: правило по имени перебивало
-    # общее :disabled. Очередь пуста — снимать отметки не с чего.
-    assert not win.uncheck_all_button.isEnabled()
-    quiet_off = _brightest(win.uncheck_all_button)
+    # общее :disabled. Очередь пуста — очищать нечего.
+    assert not win.clear_button.isEnabled()
+    quiet_off = _brightest(win.clear_button)
     win._on_scan_finished([img], []); settle(50)
-    assert win.uncheck_all_button.isEnabled()
-    assert _brightest(win.uncheck_all_button) - quiet_off > 60
+    assert win.clear_button.isEnabled()
+    assert _brightest(win.clear_button) - quiet_off > 60
     win.close()
 check("выключенное поле и его подпись выглядят выключенными", t_disabled_fields_look_disabled)
 
@@ -1255,6 +1255,29 @@ def t_tab_order():
     win2.close()
     store.remove("tab_order")
 check("порядок вкладок: перетаскивание, клавиши, сохранение", t_tab_order)
+
+
+def t_platform_themes_toggle():
+    """Цвета площадок выключаются в меню версии: вкладки — в основной теме."""
+    from main_window import TAB_TWITCH
+    store = QSettings(ORGANIZATION, ORGANIZATION)
+    win = MainWindow(); win.show(); settle(100)
+    win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    assert win.right_panel.styleSheet(), "тема Twitch не применилась"
+    menu = win.version_button.menu(); win._fill_version_menu(menu)
+    toggle = next(a for a in menu.actions() if "Цвета площадок" in a.text())
+    assert toggle.isChecked()
+    toggle.trigger(); settle(300)
+    assert win.right_panel.styleSheet() == "", "с выключенными цветами вкладка окрашена"
+    assert store.value("platform_themes", True, type=bool) is False
+    win.close()
+    win2 = MainWindow(); win2.show(); settle(100)
+    win2.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    assert win2.right_panel.styleSheet() == "", "настройка не сохранилась"
+    win2._set_platform_themes(True); settle(300)
+    assert win2.right_panel.styleSheet()
+    win2.close()
+check("цвета площадок на вкладках выключаются в меню версии", t_platform_themes_toggle)
 
 
 def idle_status_text():

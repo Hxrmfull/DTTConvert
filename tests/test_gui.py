@@ -221,7 +221,13 @@ def t_queue_checkboxes():
 
     w.file_list.item(1).setCheckState(Qt.CheckState.Unchecked); app.processEvents()
     assert E(w.file_list.item(1)).enabled is False, "галочка не сохранилась в данных"
-    assert "Отмечено 2 из 3" in w.queue_counter_label.text(), w.queue_counter_label.text()
+    assert "Отмечено 2 из 3" in w.queue_check_all.text(), w.queue_check_all.text()
+    assert w.queue_check_all.checkState() == Qt.CheckState.PartiallyChecked
+    # Галочка «все»: при частичной отметке — отмечает все, при полной — снимает.
+    w.queue_check_all.click(); app.processEvents()
+    assert len(w._checked_rows()) == 3 and w.queue_check_all.checkState() == Qt.CheckState.Checked
+    w.queue_check_all.click(); app.processEvents()
+    assert not w._checked_rows() and w.queue_check_all.checkState() == Qt.CheckState.Unchecked
 
     w._set_all_checked(False); app.processEvents()
     assert not w._checked_rows(), "отметки не сняты"

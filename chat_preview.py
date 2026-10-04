@@ -23,7 +23,10 @@ from i18n import tr
 # видео: выше неё вкладке понадобилась бы прокрутка при размере окна по
 # умолчанию (см. tests/test_layout_normal.py).
 PREVIEW_MIN_HEIGHT = 64
-PREVIEW_MAX_HEIGHT = 170
+# На вкладках с малым числом пресетов предпросмотр занимает свободное
+# место карточки, а не оставляет под собой пустую полосу.
+PREVIEW_MAX_HEIGHT = 240
+PREVIEW_PREFERRED_HEIGHT = 170
 PADDING = 12
 # Мелкие подписи сцены («крупно», «кадр из видео», время сообщения).
 # Было 10 px — на тёмном фоне чата они читались с трудом.
@@ -380,7 +383,10 @@ class ChatPreview(QWidget):
     # --- данные ---
 
     def sizeHint(self):
-        return QSize(420, PREVIEW_MAX_HEIGHT)
+        # Желаемая высота — прежняя: при ней страницы помещаются без
+        # прокрутки. Растёт предпросмотр сам, политикой Expanding, когда в
+        # карточке есть свободное место, — до PREVIEW_MAX_HEIGHT.
+        return QSize(420, PREVIEW_PREFERRED_HEIGHT)
 
     def minimumSizeHint(self):
         return QSize(200, PREVIEW_MIN_HEIGHT)
