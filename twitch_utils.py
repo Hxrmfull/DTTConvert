@@ -1,7 +1,7 @@
 """Параметры выходных файлов для вкладки Twitch.
 
 Кроме смайликов самого Twitch здесь значки подписки, иконки наград за
-баллы канала и смайлики сторонних расширений чата — 7TV и BTTV: все они
+баллы канала и смайлики расширения чата 7TV: все они
 живут в чате Twitch, и пользователю их удобнее искать на одной вкладке.
 
 Требования площадок:
@@ -9,8 +9,9 @@
 - значки подписки — PNG 18/36/72 px, до 25 КБ каждый
   (https://help.twitch.tv/s/article/subscriber-badge-guide);
 - иконки наград за баллы канала — PNG 28/56/112 px, до 25 КБ каждая;
-- 7TV — до 128×128, WEBP/GIF/PNG, до 150 кадров анимации;
-- BTTV — 112×112, PNG или GIF, до 1 МБ.
+- 7TV — до 128×128, WEBP/GIF/PNG, до 150 кадров анимации.
+
+BTTV убран в 1.3.0: его пользователи перешли на 7TV.
 """
 
 from dataclasses import dataclass
@@ -32,9 +33,6 @@ SEVENTV_MAX_BYTES = 1024 * 1024
 SEVENTV_MAX_FRAMES = 150
 SEVENTV_FPS_CAP = 30
 
-BTTV_SIZE = 112
-BTTV_MAX_BYTES = 1024 * 1024
-BTTV_FPS_CAP = 25
 
 # Частота кадров анимированного смайлика Twitch: не выше этой, даже если
 # лимит кадров позволяет больше, — так GIF укладывается в вес.
@@ -47,7 +45,6 @@ TWITCH_MIN_SMOOTH_FPS = 8
 KIND_STATIC = "static"
 KIND_GIF = "gif"
 KIND_AUTO_WEBP = "auto_webp"
-KIND_AUTO_GIF = "auto_gif"
 
 
 @dataclass(frozen=True)
@@ -82,8 +79,6 @@ TWITCH_PRESETS = {
                                        KIND_STATIC, "_twitch_points_{size}"),
     "seventv_emote": SquarePreset((SEVENTV_SIZE,), SEVENTV_MAX_BYTES, KIND_AUTO_WEBP,
                                   "_7tv", SEVENTV_MAX_FRAMES, SEVENTV_FPS_CAP),
-    "bttv_emote": SquarePreset((BTTV_SIZE,), BTTV_MAX_BYTES, KIND_AUTO_GIF,
-                               "_bttv", None, BTTV_FPS_CAP),
 }
 
 TWITCH_STATIC_FORMATS = {code for code, preset in TWITCH_PRESETS.items()
@@ -92,7 +87,7 @@ TWITCH_ANIMATED_FORMATS = {code for code, preset in TWITCH_PRESETS.items()
                            if preset.kind == KIND_GIF}
 # Анимированы или нет — решает исходник.
 TWITCH_AUTO_FORMATS = {code for code, preset in TWITCH_PRESETS.items()
-                       if preset.kind in (KIND_AUTO_WEBP, KIND_AUTO_GIF)}
+                       if preset.kind == KIND_AUTO_WEBP}
 TWITCH_ALL_FORMATS = set(TWITCH_PRESETS)
 
 # Колонки кнопок на вкладке Twitch: смайлики Twitch отдельно от значков
@@ -101,7 +96,7 @@ TWITCH_PRESET_COLUMNS = [
     ("col_twitch_emotes", ["twitch_static_112", "twitch_static_pack",
                            "twitch_animated_112", "twitch_animated_pack"]),
     ("col_twitch_more", ["twitch_badge_pack", "twitch_points_pack",
-                         "seventv_emote", "bttv_emote"]),
+                         "seventv_emote"]),
 ]
 # Плоский список — для тестов и старого кода.
 TWITCH_PRESET_CODES = [code for _caption, codes in TWITCH_PRESET_COLUMNS
@@ -115,7 +110,6 @@ _PRESET_LABEL_KEYS = {
     "twitch_badge_pack": "preset_twitch_badge",
     "twitch_points_pack": "preset_twitch_points",
     "seventv_emote": "preset_7tv",
-    "bttv_emote": "preset_bttv",
 }
 
 
@@ -154,7 +148,7 @@ def is_twitch_animated_format(output_format):
 
 
 def is_twitch_auto_format(output_format):
-    """Анимация или статика — по исходнику (7TV, BTTV)."""
+    """Анимация или статика — по исходнику (7TV)."""
     return output_format.lower() in TWITCH_AUTO_FORMATS
 
 
@@ -191,8 +185,6 @@ def twitch_hint(output_format):
     if fmt == "seventv_emote":
         return tr("hint_7tv", size=preset.sizes[0], limit=limit,
                   frames=preset.max_frames)
-    if fmt == "bttv_emote":
-        return tr("hint_bttv", size=preset.sizes[0], limit=limit)
     if preset.kind == KIND_GIF:
         return tr("hint_twitch_animated", sizes=sizes,
                   frames=preset.max_frames, limit=limit)

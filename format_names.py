@@ -35,7 +35,6 @@ PLATFORM_LABEL_KEYS = {
     "discord_emoji_png": "lbl_dc_emoji_png",
     "discord_emoji_gif": "lbl_dc_emoji_gif",
     "seventv_emote": "lbl_7tv",
-    "bttv_emote": "lbl_bttv",
     "whatsapp_static": "lbl_wa_static",
     "whatsapp_animated": "lbl_wa_animated",
     "whatsapp_tray": "lbl_wa_tray",

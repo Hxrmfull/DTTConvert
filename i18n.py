@@ -436,23 +436,16 @@ STRINGS = {
         "WEBP (до {frames} кадров), из картинки — PNG. Не больше {limit}.",
         "7TV emote: {size}×{size} px. Video and animations become an animated "
         "WEBP (up to {frames} frames), still pictures a PNG. No larger than {limit}."),
-    "hint_bttv": (
-        "Смайлик BTTV: {size}×{size} px. Из видео и анимации — GIF, из картинки "
-        "— PNG. Не больше {limit}.",
-        "BTTV emote: {size}×{size} px. Video and animations become a GIF, still "
-        "pictures a PNG. No larger than {limit}."),
     "col_twitch_emotes": ("СМАЙЛИКИ TWITCH", "TWITCH EMOTES"),
     "col_twitch_more": ("ЗНАЧКИ И РАСШИРЕНИЯ", "BADGES AND EXTENSIONS"),
     "preset_twitch_badge": ("Значок подписки (3 файла)", "Sub badge (3 files)"),
     "preset_twitch_points": ("Значок баллов (3 файла)", "Points icon (3 files)"),
     "preset_7tv": ("Смайлик 7TV", "7TV emote"),
-    "preset_bttv": ("Смайлик BTTV", "BTTV emote"),
     # Подписи форматов площадок — одна схема «Площадка: что и в чём»:
     # раньше рядом стояли «TG Стикер», «DC Эмодзи», «WA Стикер» и «Twitch PNG».
     "lbl_twitch_badge_pack": ("Twitch: значок 18/36/72", "Twitch: badge 18/36/72"),
     "lbl_twitch_points_pack": ("Twitch: баллы 28/56/112", "Twitch: points 28/56/112"),
     "lbl_7tv": ("7TV: смайлик 128×128", "7TV: emote 128×128"),
-    "lbl_bttv": ("BTTV: смайлик 112×112", "BTTV: emote 112×112"),
 
     # --- WhatsApp ---
     "tab_whatsapp_tip": ("Готовые пресеты стикеров WhatsApp",
@@ -570,10 +563,10 @@ STRINGS = {
     "dlg_link_title": ("Добавить по ссылке", "Add from a link"),
     "dlg_link_text": (
         "Ссылка на картинку, GIF, видео или стикер — прямая или на страницу "
-        "(7TV, BTTV, FFZ, Giphy и другие сайты). Несколько ссылок — каждая "
+        "(7TV, FFZ, Giphy и другие сайты). Несколько ссылок — каждая "
         "с новой строки.",
         "A link to a picture, GIF, video or sticker — a direct one or to a page "
-        "(7TV, BTTV, FFZ, Giphy and other sites). Several links — one per line."),
+        "(7TV, FFZ, Giphy and other sites). Several links — one per line."),
     "link_none": ("Ссылок не нашлось", "No links found"),
     "link_downloading": ("Загрузка по ссылкам: {done} из {total}…",
                          "Downloading links: {done} of {total}…"),

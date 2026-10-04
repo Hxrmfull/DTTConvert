@@ -42,7 +42,6 @@ from telegram_utils import (
     static_image_extension,
 )
 from twitch_utils import (
-    KIND_AUTO_GIF,
     KIND_AUTO_WEBP,
     KIND_GIF,
     KIND_STATIC,
@@ -107,7 +106,7 @@ _reserved_paths = set()
 def is_animated_image(path):
     """Определяет анимацию по содержимому файла, а не по расширению.
 
-    Анимированные WebP (эмодзи с 7TV, BTTV и т.п.) и APNG сохраняются
+    Анимированные WebP (эмодзи с 7TV и т.п.) и APNG сохраняются
     с обычными расширениями .webp и .png. Раньше программа считала их
     статичными картинками и отказывалась делать из них видео-стикеры.
     """
@@ -177,7 +176,7 @@ def is_static_target(output_format):
     if fmt in TELEGRAM_FORMATS:
         return not is_telegram_video_format(fmt)
     if is_twitch_format(fmt):
-        # 7TV и BTTV анимируют то, что анимировано в исходнике, поэтому
+        # 7TV анимирует то, что анимировано в исходнике, поэтому
         # анимированной картинке нужна вся анимация, а не один кадр.
         return not (is_twitch_animated_format(fmt) or is_twitch_auto_format(fmt))
     if is_discord_format(fmt):
@@ -687,7 +686,7 @@ class ConversionWorker(QThread):
     def _process_square_job(self, index, job, base_name, category, output_format, preset,
                             ffmpeg):
         """Вкладки Twitch, Kick и YouTube: смайлики, значки, иконки баллов,
-        7TV и BTTV.
+        7TV.
 
         Всё это квадраты одного или нескольких размеров под лимит веса;
         отличаются размеры, лимиты и то, анимирован ли результат.
@@ -701,8 +700,6 @@ class ConversionWorker(QThread):
 
         if preset.kind == KIND_GIF:
             animation = "gif"
-        elif preset.kind == KIND_AUTO_GIF:
-            animation = "gif" if moving else None
         elif preset.kind == KIND_AUTO_WEBP:
             animation = "webp" if moving else None
         else:

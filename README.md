@@ -3,7 +3,7 @@
 **English** · [Русский](README.ru.md)
 
 Converts images, GIFs, videos and stickers for **D**iscord, **T**elegram and
-**T**witch, as well as WhatsApp, Kick, YouTube, 7TV and BTTV. Presets pick the size, frame
+**T**witch, as well as WhatsApp, Kick, YouTube and 7TV. Presets pick the size, frame
 rate and file size on their own, so the platform accepts the file on the
 first try.
 
@@ -52,7 +52,7 @@ GIF, stickers and audio, put `ffmpeg.exe` and `ffprobe.exe` next to
   The source file is never overwritten.
 - **Links:** paste a link with `Ctrl+V`, drag it from a browser or use
   "Add from a link…" in the queue menu. A direct link to a file works,
-  and so does a 7TV, BTTV, FFZ or Giphy page or any page with a picture.
+  and so does a 7TV, FFZ or Giphy page or any page with a picture.
 - **Shortcuts:** `Ctrl+O` — add, `Delete` — remove, `Alt+↑/↓` — reorder,
   `Ctrl+Enter` — start, `Esc` — stop. The whole window works with `Tab`.
 
@@ -66,7 +66,7 @@ GIF, stickers and audio, put `ffmpeg.exe` and `ffprobe.exe` next to
 | Discord | Emoji | PNG or GIF 128×128, ≤ 256 KB |
 | Twitch | Emote | PNG/GIF 112×112 or a 28/56/112 set, ≤ 1 MB, GIF ≤ 60 frames |
 | Twitch | Sub badge, channel points | PNG, 18/36/72 and 28/56/112 sets, each ≤ 25 KB |
-| 7TV / BTTV | Emote | WEBP/GIF or PNG, 128 / 112 px, ≤ 1 MB |
+| 7TV | Emote | WEBP or PNG, 128 px, ≤ 1 MB |
 | WhatsApp | Sticker | WEBP 512×512, ≤ 100 KB; animated ≤ 10 s, ≤ 500 KB; pack icon PNG 96×96 |
 | Kick | Emote, sub badge | PNG 500×500 or GIF 256×256, < 1 MB; badge PNG 36/72 set |
 | YouTube | Member emoji, badge | PNG 480×480 and 128×128, < 1 MB (YouTube doesn't animate them) |

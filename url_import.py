@@ -4,7 +4,7 @@
 диалоге «Добавить по ссылке». Подходит прямая ссылка на файл и ссылка на
 страницу:
 
-- страницы смайликов 7TV, BTTV и FrankerFaceZ, гифки Giphy — по известным
+- страницы смайликов 7TV и FrankerFaceZ, гифки Giphy — по известным
   правилам превращаются в ссылку на сам файл в наибольшем размере (у 7TV
   и FFZ заодно берётся имя смайлика);
 - смайлики Twitch с CDN — берётся наибольший размер 3.0;
@@ -99,11 +99,6 @@ def resolve_known_site(url):
         # WEBP у 7TV есть у всех смайликов, анимированных и нет, и он
         # сохраняет полупрозрачность, в отличие от GIF.
         return f"https://cdn.7tv.app/emote/{emote_id}/4x.webp", name or f"7tv_{emote_id}"
-
-    # BTTV: betterttv.com/emotes/<id>. Имя без входа API не отдаёт.
-    if host == "betterttv.com" and len(segments) >= 2 and segments[0] == "emotes":
-        emote_id = segments[1]
-        return f"https://cdn.betterttv.net/emote/{emote_id}/3x", f"bttv_{emote_id}"
 
     # FrankerFaceZ: frankerfacez.com/emoticon/<id>-<имя>
     if host == "frankerfacez.com" and len(segments) >= 2 and segments[0] == "emoticon":

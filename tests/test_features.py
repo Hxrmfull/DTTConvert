@@ -691,8 +691,9 @@ def t_links():
         url_import._get_json = offline
         assert url_import.resolve_known_site("https://7tv.app/emotes/01ABC") == \
             ("https://cdn.7tv.app/emote/01ABC/4x.webp", "7tv_01ABC")
+        # BTTV убран: его страница — обычная ссылка без особых правил.
         assert url_import.resolve_known_site("https://betterttv.com/emotes/5f1b") == \
-            ("https://cdn.betterttv.net/emote/5f1b/3x", "bttv_5f1b")
+            ("https://betterttv.com/emotes/5f1b", None)
         assert url_import.resolve_known_site("https://www.frankerfacez.com/emoticon/28136-LilZ") == \
             ("https://cdn.frankerfacez.com/emote/28136/4", "LilZ")
         assert url_import.resolve_known_site("https://giphy.com/gifs/cat-funny-JIX9t2") == \

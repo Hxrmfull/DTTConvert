@@ -112,7 +112,7 @@ def t_awebp():
 check("F15 animated webp -> кадры (D1, все кадры на месте)", t_awebp)
 
 def t_animated_webp_detection():
-    """Анимированный WebP с обычным расширением .webp (эмодзи 7TV/BTTV)
+    """Анимированный WebP с обычным расширением .webp (эмодзи 7TV)
     должен распознаваться как анимация, а не как статичная картинка."""
     from worker import get_category, is_animated_image
     src = os.path.join(WORK, "анимация.webp")
@@ -952,18 +952,14 @@ def t_twitch_badges_points():
     assert sorted(sizes)==[28,56,112], sizes
 check("N4 значки подписки и иконки баллов Twitch: размеры и лимит 25 КБ", t_twitch_badges_points)
 
-def t_7tv_bttv_auto():
+def t_7tv_auto():
     d=os.path.join(WORK,"7tv_anim"); made=run_job(ANIM_WEBP,"seventv_emote",d)
     assert made==["эмоут_7tv.webp"], made
     with Image.open(os.path.join(d,made[0])) as im:
         assert im.size==(128,128) and getattr(im,"n_frames",1)>1, (im.size, getattr(im,"n_frames",1))
     d2=os.path.join(WORK,"7tv_static"); made2=run_job(IMG,"seventv_emote",d2)
     assert made2==["img_7tv.png"], made2
-    d3=os.path.join(WORK,"bttv"); made3=run_job(SRC,"bttv_emote",d3)
-    assert made3==["люси1_bttv.gif"], made3
-    assert os.path.getsize(os.path.join(d3,made3[0]))<=1024*1024
-    assert fp.get_media_info(os.path.join(d3,made3[0]))["width"]==112
-check("N5 7TV и BTTV: анимация из анимации, PNG из картинки", t_7tv_bttv_auto)
+check("N5 7TV: анимация из анимации, PNG из картинки", t_7tv_auto)
 
 def t_whatsapp():
     d=os.path.join(WORK,"wa"); made=run_job(IMG,"whatsapp_static",d)
