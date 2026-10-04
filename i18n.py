@@ -498,13 +498,38 @@ STRINGS = {
 
     # --- вставка из буфера обмена ---
     "menu_paste": ("Вставить из буфера (Ctrl+V)", "Paste from clipboard (Ctrl+V)"),
-    "paste_nothing": ("В буфере обмена нет картинки или файлов",
-                      "The clipboard holds no picture or files"),
+    "paste_nothing": ("В буфере обмена нет картинки, ссылки или файлов",
+                      "The clipboard holds no picture, link or files"),
     "paste_added": ("Из буфера добавлено: {count}", "Added from the clipboard: {count}"),
     "paste_failed": ("Не удалось сохранить картинку из буфера: {error}",
                      "Could not save the clipboard picture: {error}"),
-    "drop_hint_paste": ("Ctrl+V — вставить картинку из буфера",
-                        "Ctrl+V pastes a picture from the clipboard"),
+    "drop_hint_paste": ("Ctrl+V — вставить картинку или ссылку из буфера",
+                        "Ctrl+V pastes a picture or a link from the clipboard"),
+
+    # --- файлы по ссылкам ---
+    "menu_add_link": ("Добавить по ссылке…", "Add from a link…"),
+    "dlg_link_title": ("Добавить по ссылке", "Add from a link"),
+    "dlg_link_text": (
+        "Ссылка на картинку, GIF, видео или стикер — прямая или на страницу "
+        "(7TV, BTTV, FFZ, Giphy и другие сайты). Несколько ссылок — каждая "
+        "с новой строки.",
+        "A link to a picture, GIF, video or sticker — a direct one or to a page "
+        "(7TV, BTTV, FFZ, Giphy and other sites). Several links — one per line."),
+    "link_none": ("Ссылок не нашлось", "No links found"),
+    "link_downloading": ("Загрузка по ссылкам: {done} из {total}…",
+                         "Downloading links: {done} of {total}…"),
+    "link_added": ("По ссылкам скачано: {count}", "Downloaded from links: {count}"),
+    "link_result": ("По ссылкам скачано: {added}, не удалось: {failed}",
+                    "Downloaded from links: {added}, failed: {failed}"),
+    "dlg_link_failed_title": ("Не всё скачалось", "Some links failed"),
+    "err_link_bad": ("Это не ссылка http или https", "This isn't an http or https link"),
+    "err_link_download": ("Не удалось скачать файл:", "Couldn't download the file:"),
+    "err_link_no_media": ("На странице не нашлось картинки или видео",
+                          "No picture or video found on the page"),
+    "err_link_unsupported": ("По ссылке не картинка, не видео и не стикер",
+                             "The link is not a picture, video or sticker"),
+    "err_link_cancelled": ("Загрузка прервана", "Download cancelled"),
+    "err_link_too_big": ("Файл больше {limit} МБ", "The file is larger than {limit} MB"),
 
     # --- предпросмотр в чате ---
     "preview_title": ("Так результат будет выглядеть в чате",

@@ -1,6 +1,7 @@
 import csv
 import logging
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QInputDialog,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -69,6 +71,7 @@ from discord_utils import (
     is_discord_format,
 )
 from errors import first_line, message_text
+import url_import
 from styles import (THEME_MAIN, build_stylesheet, palette, theme_for_tab)
 from chat_preview import ChatPreview
 from whatsapp_utils import (
@@ -294,6 +297,8 @@ PREVIEW_CACHE_LIMIT = 24
 PRESERVED_ON_RESET = ("language", "check_updates")
 # Сколько дней хранятся картинки, вставленные из буфера обмена.
 PASTED_KEEP_DAYS = 7
+# Адрес картинки во вставке из браузера («Копировать изображение»).
+IMG_SRC_RE = re.compile(r"""<img[^>]+src=["']([^"']+)""", re.IGNORECASE)
 # Что предпросмотр проигрывает как анимацию (умеет QMovie).
 PREVIEW_MOVIE_EXTS = {".gif", ".webp"}
 # Больше этого числа миниатюр не строим — иначе добавление папки подвешивает окно.
@@ -630,8 +635,36 @@ class FolderScanWorker(QThread):
         self.finished_scan.emit(accepted, skipped)
 
 
+class LinkDownloadWorker(QThread):
+    """Скачивает файлы по ссылкам в фоне: сеть может отвечать секундами."""
+
+    downloaded = pyqtSignal(str)
+    # Ссылка и ошибка (LocalizedError или текст) — переводит окно при показе.
+    failed = pyqtSignal(str, object)
+
+    def __init__(self, urls, parent=None):
+        super().__init__(parent)
+        self.urls = list(urls)
+
+    def run(self):
+        for url in self.urls:
+            if self.isInterruptionRequested():
+                break
+            try:
+                path = url_import.download_url(
+                    url, pasted_directory(), SUPPORTED_INPUT_EXTS,
+                    cancelled=self.isInterruptionRequested,
+                )
+            except Exception as exc:
+                _log.info("Не удалось скачать по ссылке %s: %s", url, exc)
+                self.failed.emit(url, exc)
+                continue
+            self.downloaded.emit(path)
+
+
 class FileQueueList(QListWidget):
-    def __init__(self, on_files_dropped, on_empty_clicked=None, parent=None):
+    def __init__(self, on_files_dropped, on_empty_clicked=None, parent=None,
+                 on_urls_dropped=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
@@ -646,6 +679,9 @@ class FileQueueList(QListWidget):
         self.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.on_files_dropped = on_files_dropped
         self.on_empty_clicked = on_empty_clicked
+        # Картинка или ссылка, перетащенная из браузера, приходит адресом
+        # в сети, а не файлом на диске.
+        self.on_urls_dropped = on_urls_dropped
         self._placeholder_visible = True
         self._drag_active = False
         self._update_cursor()
@@ -733,11 +769,17 @@ class FileQueueList(QListWidget):
         self.viewport().update()
         if event.mimeData().hasUrls():
             paths = []
+            links = []
             for url in event.mimeData().urls():
                 local_path = url.toLocalFile()
                 if local_path:
                     paths.append(local_path)
-            self.on_files_dropped(paths)
+                elif url.scheme() in ("http", "https"):
+                    links.append(url.toString())
+            if paths:
+                self.on_files_dropped(paths)
+            if links and self.on_urls_dropped is not None:
+                self.on_urls_dropped(links)
             event.acceptProposedAction()
         else:
             super().dropEvent(event)
@@ -806,6 +848,11 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._check_ffmpeg_status)
         self._update_worker = None
         self._update_url = None
+        # Загрузка по ссылкам: поток, ссылки в очереди за ним, итоги.
+        self._link_worker = None
+        self._pending_links = []
+        self._link_errors = []
+        self._link_added = 0
         # Загрузка установщика новой версии и её процент — переживают
         # пересборку окна при смене языка.
         self._update_download = None
@@ -813,6 +860,10 @@ class MainWindow(QMainWindow):
         # Сеть — не раньше, чем окно появилось: старт не должен её ждать.
         QTimer.singleShot(1500, self._start_update_check)
         cleanup_pasted_images()
+        try:
+            url_import.cleanup_links(pasted_directory(), PASTED_KEEP_DAYS)
+        except OSError:
+            _log.debug("Не удалось почистить загрузки по ссылкам", exc_info=True)
 
     def _restore_window_state(self):
         """Возвращает размер окна, вкладку и положение разделителя."""
@@ -969,7 +1020,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_layout)
 
         self.file_list = FileQueueList(
-            self._add_files_from_paths, on_empty_clicked=self._on_add_files_clicked
+            self._add_files_from_paths, on_empty_clicked=self._on_add_files_clicked,
+            on_urls_dropped=self._add_files_from_urls,
         )
         self.file_list.itemSelectionChanged.connect(self._on_selection_changed)
         self.file_list.itemChanged.connect(self._on_item_check_changed)
@@ -2244,10 +2296,13 @@ class MainWindow(QMainWindow):
         item = self.file_list.itemAt(position)
         paste_action = QAction(tr("menu_paste"), self)
         paste_action.triggered.connect(self._paste_from_clipboard)
+        link_action = QAction(tr("menu_add_link"), self)
+        link_action.triggered.connect(self._on_add_link)
         if item is None:
-            # По пустому месту — только вставка: остальным пунктам нужен файл.
+            # По пустому месту — только добавление: остальным пунктам нужен файл.
             menu = QMenu(self)
             menu.addAction(paste_action)
+            menu.addAction(link_action)
             menu.exec(self.file_list.viewport().mapToGlobal(position))
             return
         entry = self._entry(item)
@@ -2273,6 +2328,7 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
         menu.addAction(paste_action)
+        menu.addAction(link_action)
         remove_action = QAction(tr("menu_remove"), self)
         remove_action.triggered.connect(self._on_remove_selected)
         menu.addAction(remove_action)
@@ -2300,6 +2356,21 @@ class MainWindow(QMainWindow):
         if paths:
             self._add_files_from_paths(paths)
             return
+        # Ссылка на картинку лучше самой картинки: «Копировать изображение»
+        # в браузере кладёт в буфер только первый кадр GIF, а по адресу из
+        # той же вставки (<img src>) скачивается вся анимация.
+        links = []
+        if mime.hasHtml():
+            links = [url for url in IMG_SRC_RE.findall(mime.html())
+                     if url.lower().startswith(("http://", "https://"))][:1]
+        if not links and mime.hasUrls():
+            links = [url.toString() for url in mime.urls()
+                     if url.scheme() in ("http", "https")]
+        if not links and mime.hasText():
+            links = url_import.extract_urls(mime.text())
+        if links:
+            self._add_files_from_urls(links)
+            return
         if mime.hasImage():
             image = QImage(mime.imageData())
             if not image.isNull():
@@ -2312,6 +2383,71 @@ class MainWindow(QMainWindow):
                 self.current_file_label.setText(tr("paste_added", count=1))
                 return
         self.current_file_label.setText(tr("paste_nothing"))
+
+    def _on_add_link(self):
+        """Диалог «Добавить по ссылке»: одна ссылка или несколько, по строкам."""
+        if self.worker is not None:
+            return
+        text, accepted = QInputDialog.getMultiLineText(
+            self, tr("dlg_link_title"), tr("dlg_link_text"))
+        if not accepted:
+            return
+        links = url_import.extract_urls(text)
+        if not links:
+            self.current_file_label.setText(tr("link_none"))
+            return
+        self._add_files_from_urls(links)
+
+    def _add_files_from_urls(self, urls):
+        """Скачивает файлы по ссылкам и ставит их в очередь по мере загрузки."""
+        if self.worker is not None or not urls:
+            return
+        if self._link_worker is not None:
+            # Предыдущая загрузка ещё идёт — новые ссылки встанут за ней.
+            self._pending_links.extend(urls)
+            return
+        self._link_errors = []
+        self._link_added = 0
+        self._start_link_download(list(urls))
+
+    def _start_link_download(self, urls):
+        self._link_total = len(urls)
+        self._link_done = 0
+        self.current_file_label.setText(tr("link_downloading", done=0, total=self._link_total))
+        self._link_worker = LinkDownloadWorker(urls, self)
+        self._link_worker.downloaded.connect(self._on_link_downloaded)
+        self._link_worker.failed.connect(self._on_link_failed)
+        self._link_worker.finished.connect(self._on_link_worker_finished)
+        self._link_worker.finished.connect(self._link_worker.deleteLater)
+        self._link_worker.start()
+
+    def _link_progress(self):
+        self._link_done += 1
+        self.current_file_label.setText(
+            tr("link_downloading", done=self._link_done, total=self._link_total))
+
+    def _on_link_downloaded(self, path):
+        self._link_progress()
+        self._link_added += 1
+        self._add_files_from_paths([path])
+
+    def _on_link_failed(self, url, error):
+        self._link_progress()
+        self._link_errors.append(f"{url}\n{message_text(error)}")
+
+    def _on_link_worker_finished(self):
+        self._link_worker = None
+        if self._pending_links:
+            pending, self._pending_links = self._pending_links, []
+            self._start_link_download(pending)
+            return
+        if self._link_errors:
+            self.current_file_label.setText(
+                tr("link_result", added=self._link_added, failed=len(self._link_errors)))
+            QMessageBox.warning(self, tr("dlg_link_failed_title"),
+                                "\n\n".join(self._link_errors[:10]))
+        else:
+            self.current_file_label.setText(tr("link_added", count=self._link_added))
 
     def _reveal_in_explorer(self, path):
         """Открывает проводник с выделенным файлом."""
@@ -3556,7 +3692,7 @@ class MainWindow(QMainWindow):
         for background in (self.scan_worker, self._thumb_worker,
                            self._image_thumb_worker, self._queue_info_worker,
                            self._preview_worker, self._update_worker,
-                           self._update_download):
+                           self._update_download, self._link_worker):
             try:
                 running = background is not None and background.isRunning()
             except RuntimeError:

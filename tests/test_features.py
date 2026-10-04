@@ -641,6 +641,135 @@ def t_update_one_click():
 check("обновление в один щелчок: проверка файла, запуск установщика", t_update_one_click)
 
 
+def t_links():
+    """Файлы по ссылкам — с локального сервера, без интернета."""
+    import io
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import url_import
+    from main_window import SUPPORTED_INPUT_EXTS
+
+    png = io.BytesIO(); Image.new("RGBA", (40, 40), (0, 200, 0, 255)).save(png, "PNG")
+    gif = io.BytesIO()
+    Image.new("P", (30, 30), 1).save(gif, "GIF", save_all=True,
+                                       append_images=[Image.new("P", (30, 30), 2)], duration=100)
+    routes = {
+        "/pic.png": ("image/png", png.getvalue()),
+        # CDN без расширения в адресе и с неверным типом — решает сигнатура.
+        "/emote/abc/3x": ("application/octet-stream", gif.getvalue()),
+        "/page": ("text/html", b'<html><head><meta property="og:image" '
+                               b'content="/emote/abc/3x"></head></html>'),
+        "/empty": ("text/html", b"<html><body>nothing</body></html>"),
+        "/text.txt": ("text/plain", b"hello"),
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            route = routes.get(self.path)
+            if route is None:
+                self.send_response(404); self.end_headers(); return
+            self.send_response(200)
+            self.send_header("Content-Type", route[0])
+            self.send_header("Content-Length", str(len(route[1])))
+            self.end_headers()
+            self.wfile.write(route[1])
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    store = os.path.join(WORK, "links_store")
+    original_get_json = url_import._get_json
+    try:
+        assert url_import.extract_urls(f"смотри {base}/pic.png и\n{base}/page.") == \
+            [f"{base}/pic.png", f"{base}/page"]
+        # Известные сайты — без сети (API недоступен — правило всё равно работает).
+        def offline(url):
+            raise OSError("offline")
+        url_import._get_json = offline
+        assert url_import.resolve_known_site("https://7tv.app/emotes/01ABC") == \
+            ("https://cdn.7tv.app/emote/01ABC/4x.webp", "7tv_01ABC")
+        assert url_import.resolve_known_site("https://betterttv.com/emotes/5f1b") == \
+            ("https://cdn.betterttv.net/emote/5f1b/3x", "bttv_5f1b")
+        assert url_import.resolve_known_site("https://www.frankerfacez.com/emoticon/28136-LilZ") == \
+            ("https://cdn.frankerfacez.com/emote/28136/4", "LilZ")
+        assert url_import.resolve_known_site("https://giphy.com/gifs/cat-funny-JIX9t2") == \
+            ("https://i.giphy.com/JIX9t2.gif", "cat-funny")
+        assert url_import.resolve_known_site(
+            "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0") == (
+            "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/3.0", "twitch_25")
+        url_import._get_json = lambda url: {"name": "RainTime"}
+        assert url_import.resolve_known_site("https://7tv.app/emotes/01ABC")[1] == "RainTime"
+
+        # Тип — по содержимому, имя — из адреса; страница ведёт к og:image.
+        path = url_import.download_url(f"{base}/pic.png", store, SUPPORTED_INPUT_EXTS)
+        assert os.path.basename(path) == "pic.png" and open(path, "rb").read() == png.getvalue()
+        path = url_import.download_url(f"{base}/emote/abc/3x", store, SUPPORTED_INPUT_EXTS)
+        assert os.path.basename(path) == "abc.gif", path
+        path = url_import.download_url(f"{base}/page", store, SUPPORTED_INPUT_EXTS)
+        assert path.endswith(".gif") and open(path, "rb").read() == gif.getvalue()
+        for url, key in ((f"{base}/empty", "err_link_no_media"),
+                         (f"{base}/text.txt", "err_link_unsupported"),
+                         (f"{base}/missing", "err_link_download"),
+                         ("ftp://example/x.png", "err_link_bad")):
+            try:
+                url_import.download_url(url, store, SUPPORTED_INPUT_EXTS)
+                raise AssertionError(f"{url}: ошибка не поднялась")
+            except url_import.LocalizedRuntimeError as exc:
+                assert exc.key == key, (url, exc.key)
+
+        # Окно: ссылки встают в очередь, ошибки собираются в одно сообщение.
+        import main_window as mw
+        original_dir = mw.pasted_directory
+        mw.pasted_directory = lambda: store
+        warnings = []
+        original_warning = QMessageBox.warning
+        QMessageBox.warning = staticmethod(lambda *a, **k: warnings.append(a))
+        try:
+            win = MainWindow(); win.show(); settle(50)
+            win._add_files_from_urls([f"{base}/pic.png", f"{base}/text.txt"])
+            win._add_files_from_urls([f"{base}/page"])  # пока идёт первая загрузка
+            deadline = _time.monotonic() + 15
+            while (win._link_worker is not None or win.file_list.count() < 2) \
+                    and _time.monotonic() < deadline:
+                settle(50)
+            settle(100)
+            names = sorted(os.path.basename(win._entry(win.file_list.item(i)).input_path)
+                           for i in range(win.file_list.count()))
+            assert names == ["abc.gif", "pic.png"], names
+            assert len(warnings) == 1 and "text.txt" in warnings[0][2], warnings
+
+            # Ctrl+V из браузера: адрес из <img src> важнее картинки в буфере.
+            from PyQt6.QtCore import QMimeData
+            mime = QMimeData()
+            mime.setHtml(f'<img src="{base}/emote/abc/3x">')
+            mime.setImageData(QImage(8, 8, QImage.Format.Format_ARGB32))
+            QApplication.clipboard().setMimeData(mime)
+            win.file_list.clear()
+            win._paste_from_clipboard()
+            deadline = _time.monotonic() + 15
+            while win.file_list.count() < 1 and _time.monotonic() < deadline:
+                settle(50)
+            entry = win._entry(win.file_list.item(0))
+            assert entry.input_path.endswith(".gif"), entry.input_path
+            win.close()
+        finally:
+            mw.pasted_directory = original_dir
+            QMessageBox.warning = original_warning
+
+        # Старые загрузки чистятся целиком, свежие остаются.
+        old = url_import.link_directory(store)
+        os.utime(old, (0, 0))
+        url_import.cleanup_links(store, 7)
+        assert not os.path.exists(old) and os.listdir(os.path.join(store, "links"))
+    finally:
+        url_import._get_json = original_get_json
+        server.shutdown()
+check("файлы по ссылкам: прямые, страницы, Ctrl+V из браузера", t_links)
+
+
 def t_twitch_long_warning():
     from job_model import ConversionJob, JobSettings
     long_clip = os.path.join(WORK, "долгий.mp4")
