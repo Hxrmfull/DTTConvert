@@ -120,6 +120,7 @@ from worker import (
     VIDEO_EXTS,
     ConversionWorker,
     get_category,
+    is_static_target,
 )
 from twitch_utils import (
     TWITCH_MIN_SMOOTH_FPS,
@@ -305,6 +306,15 @@ PASTED_KEEP_DAYS = 7
 IMG_SRC_RE = re.compile(r"""<img[^>]+src=["']([^"']+)""", re.IGNORECASE)
 # Что предпросмотр проигрывает как анимацию (умеет QMovie).
 PREVIEW_MOVIE_EXTS = {".gif", ".webp"}
+# Анимированные картинки, которые QMovie не проигрывает, — для них делается
+# копия в WEBP (Pillow собирает кадры APNG и AVIF с их задержками).
+PREVIEW_PILLOW_ANIMATED_EXTS = {".png", ".apng", ".avif"}
+# Проигрываемая копия видео для предпросмотра: столько секунд, такой FPS
+# и такой размер — показ в чате не крупнее 160 px.
+PREVIEW_VIDEO_SECONDS = 6
+PREVIEW_VIDEO_FPS = 15
+PREVIEW_ANIMATION_SIZE = 200
+PREVIEW_ANIMATION_MAX_FRAMES = 150
 # Больше этого числа миниатюр не строим — иначе добавление папки подвешивает окно.
 THUMBNAIL_LIMIT = 300
 # Сколько длится плавная смена цветов при переходе между вкладками площадок.
@@ -577,6 +587,9 @@ class PreviewFrameWorker(QThread):
     """
 
     frame_ready = pyqtSignal(str, QImage)
+    # Проигрываемая копия готова (preview_animation_path) — для видео и
+    # анимированных картинок, которые QMovie сам не проигрывает.
+    animation_ready = pyqtSignal(str)
 
     def __init__(self, path, ffmpeg, parent=None):
         super().__init__(parent)
@@ -604,7 +617,77 @@ class PreviewFrameWorker(QThread):
                     write_preview_animation(self.path)
         except Exception:
             _log.debug("Не удалось подготовить предпросмотр %s", self.path, exc_info=True)
+        # Кадр — сразу: копия для проигрывания готовится секунду-другую,
+        # и всё это время предпросмотр не должен стоять пустым.
         self.frame_ready.emit(self.path, image if image is not None else QImage())
+        # Окно закрывается — анимацию не начинаем: она идёт секунды.
+        if self.isInterruptionRequested():
+            return
+        try:
+            if write_motion_preview(self.path, self.ffmpeg):
+                self.animation_ready.emit(self.path)
+        except Exception:
+            _log.debug("Не удалось сделать анимацию предпросмотра %s", self.path,
+                       exc_info=True)
+
+
+def cleanup_preview_animations(max_age_days=PASTED_KEEP_DAYS):
+    """Удаляет старые проигрываемые копии предпросмотра из временной папки."""
+    folder = os.path.dirname(preview_animation_path(""))
+    try:
+        limit = time.time() - max_age_days * 24 * 60 * 60
+        for name in os.listdir(folder):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path) and os.path.getmtime(path) < limit:
+                os.remove(path)
+    except OSError:
+        pass
+
+
+def write_motion_preview(path, ffmpeg):
+    """Проигрываемая копия видео или анимированной картинки (WEBP).
+
+    Возвращает True, если копия есть. GIF, WEBP и .tgs сюда не попадают:
+    первые два проигрывает сам QMovie, у стикера своя копия.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    is_video = ext in VIDEO_EXTS
+    if not is_video and ext not in PREVIEW_PILLOW_ANIMATED_EXTS:
+        return False
+    target = preview_animation_path(path)
+    if os.path.isfile(target):
+        return True
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    partial = target + ".part.webp"
+    try:
+        if is_video:
+            if ffmpeg is None:
+                return False
+            ffmpeg.make_preview_animation(path, partial, PREVIEW_ANIMATION_SIZE,
+                                          PREVIEW_VIDEO_SECONDS, PREVIEW_VIDEO_FPS)
+        else:
+            from PIL import Image
+
+            with Image.open(path) as source:
+                count = getattr(source, "n_frames", 1)
+                if count < 2:
+                    return False
+                frames, durations = [], []
+                for index in range(min(count, PREVIEW_ANIMATION_MAX_FRAMES)):
+                    source.seek(index)
+                    frame = source.convert("RGBA")
+                    frame.thumbnail((PREVIEW_ANIMATION_SIZE, PREVIEW_ANIMATION_SIZE))
+                    frames.append(frame)
+                    durations.append(source.info.get("duration") or 100)
+            frames[0].save(partial, "WEBP", save_all=True, append_images=frames[1:],
+                           duration=durations, loop=0, quality=70)
+        # Готовый файл появляется целиком: недописанную копию предпросмотр
+        # принял бы за готовую.
+        os.replace(partial, target)
+        return True
+    finally:
+        if os.path.exists(partial):
+            os.remove(partial)
 
 
 class FolderScanWorker(QThread):
@@ -871,6 +954,7 @@ class MainWindow(QMainWindow):
             url_import.cleanup_links(pasted_directory(), PASTED_KEEP_DAYS)
         except OSError:
             _log.debug("Не удалось почистить загрузки по ссылкам", exc_info=True)
+        cleanup_preview_animations()
 
     def _restore_window_state(self):
         """Возвращает размер окна, вкладку и положение разделителя."""
@@ -1025,6 +1109,22 @@ class MainWindow(QMainWindow):
         self.queue_counter_label.setObjectName("HintLabel")
         header_layout.addWidget(self.queue_counter_label)
         layout.addLayout(header_layout)
+
+        # Поле для ссылки на виду: Ctrl+V и пункт меню очереди находят не все.
+        link_row = QHBoxLayout()
+        link_row.setSpacing(8)
+        self.link_edit = QLineEdit()
+        self.link_edit.setPlaceholderText(tr("link_placeholder"))
+        self.link_edit.setAccessibleName(tr("link_placeholder"))
+        self.link_edit.setToolTip(tr("dlg_link_text"))
+        self.link_edit.setClearButtonEnabled(True)
+        self.link_edit.returnPressed.connect(self._on_link_entered)
+        self.link_add_button = QPushButton(tr("link_add"))
+        self.link_add_button.setToolTip(tr("dlg_link_text"))
+        self.link_add_button.clicked.connect(self._on_link_entered)
+        link_row.addWidget(self.link_edit, stretch=1)
+        link_row.addWidget(self.link_add_button)
+        layout.addLayout(link_row)
 
         self.file_list = FileQueueList(
             self._add_files_from_paths, on_empty_clicked=self._on_add_files_clicked,
@@ -2457,6 +2557,18 @@ class MainWindow(QMainWindow):
             return
         self._add_files_from_urls(links)
 
+    def _on_link_entered(self):
+        """Ссылка из поля над очередью: Enter или кнопка «Добавить»."""
+        if self.worker is not None:
+            self.current_file_label.setText(tr("link_busy"))
+            return
+        links = url_import.extract_urls(self.link_edit.text())
+        if not links:
+            self.current_file_label.setText(tr("link_none"))
+            return
+        self.link_edit.clear()
+        self._add_files_from_urls(links)
+
     def _add_files_from_urls(self, urls):
         """Скачивает файлы по ссылкам и ставит их в очередь по мере загрузки."""
         if self.worker is not None or not urls:
@@ -2573,6 +2685,8 @@ class MainWindow(QMainWindow):
             # обычный формат, а не стикер или смайлик.
             active = codes[platform] == self._selected_format
             preview.set_active(active)
+            # Статичный пресет даёт одну картинку — анимация стоит на ней.
+            preview.set_still(active and is_static_target(codes[platform]))
             preview.setToolTip(tr("preview_title") if active
                                else tr("preset_none_hint", platform=PLATFORM_TITLES[platform]))
 
@@ -2604,6 +2718,7 @@ class MainWindow(QMainWindow):
         self._pending_preview_path = None
         self._preview_worker = PreviewFrameWorker(path, self._ffmpeg_probe, self)
         self._preview_worker.frame_ready.connect(self._on_preview_frame_ready)
+        self._preview_worker.animation_ready.connect(self._on_preview_animation_ready)
         self._preview_worker.finished.connect(self._on_preview_worker_finished)
         self._preview_worker.finished.connect(self._preview_worker.deleteLater)
         self._preview_worker.start()
@@ -2622,19 +2737,27 @@ class MainWindow(QMainWindow):
         if path == self._preview_shown_path:
             self._show_preview_frame(path, image)
 
+    def _on_preview_animation_ready(self, path):
+        if path == self._preview_shown_path:
+            self._show_preview_frame(path, self._preview_frames.get(path, QImage()))
+
     def _show_preview_frame(self, path, image):
         ext = os.path.splitext(path)[1].lower()
         is_video = ext in VIDEO_EXTS
         movie_path = path if ext in PREVIEW_MOVIE_EXTS else None
-        if is_tgs(path):
-            # Стикер Telegram проигрывается через свою копию в WEBP.
+        if movie_path is None:
+            # Стикер Telegram, видео, APNG и анимированный AVIF проигрываются
+            # через свою копию в WEBP, когда она готова.
             candidate = preview_animation_path(path)
-            movie_path = candidate if os.path.isfile(candidate) else None
+            if os.path.isfile(candidate):
+                movie_path = candidate
+                is_video = False
         for preview in self.chat_previews.values():
             if movie_path:
                 # GIF и WEBP проигрываются: анимированный смайлик и выглядит
                 # иначе, чем его первый кадр.
-                preview.set_movie(movie_path, image if not image.isNull() else None)
+                preview.set_movie(movie_path, image if not image.isNull() else None,
+                                  from_video=ext in VIDEO_EXTS)
             else:
                 preview.set_image(image if not image.isNull() else None, is_video)
 
@@ -3768,6 +3891,16 @@ class MainWindow(QMainWindow):
             if not self.worker.wait(5000):
                 self.worker.terminate()
                 self.worker.wait(1000)
+        # Копия видео для предпросмотра делается секундами — её FFmpeg
+        # останавливаем, иначе окно не дождалось бы потока и Qt уронил бы
+        # процесс, уничтожив работающий поток (0xC0000409). Останавливаем
+        # через FFmpeg самого потока: после пересборки окна (смена языка)
+        # у окна уже другой объект FFmpeg, и его отмена до процесса не дойдёт.
+        for preview_worker in self.findChildren(PreviewFrameWorker):
+            if preview_worker.isRunning():
+                preview_worker.requestInterruption()
+                if preview_worker.ffmpeg is not None:
+                    preview_worker.ffmpeg.cancel()
         for background in (self.scan_worker, self._thumb_worker,
                            self._image_thumb_worker, self._queue_info_worker,
                            self._preview_worker, self._update_worker,

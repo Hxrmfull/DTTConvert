@@ -741,6 +741,18 @@ def t_links():
             assert names == ["abc.gif", "pic.png"], names
             assert len(warnings) == 1 and "text.txt" in warnings[0][2], warnings
 
+            # Поле над очередью: ссылка и Enter.
+            win.file_list.clear()
+            win.link_edit.setText(f"  {base}/pic.png  ")
+            win.link_edit.returnPressed.emit()
+            deadline = _time.monotonic() + 15
+            while win.file_list.count() < 1 and _time.monotonic() < deadline:
+                settle(50)
+            assert win.file_list.count() == 1 and win.link_edit.text() == ""
+            win.link_edit.setText("тут нет ссылки"); win._on_link_entered()
+            assert win.current_file_label.text() == "Ссылок не нашлось"
+            assert win.link_edit.text() == "тут нет ссылки", "текст без ссылки стёрт"
+
             # Ctrl+V из браузера: адрес из <img src> важнее картинки в буфере.
             from PyQt6.QtCore import QMimeData
             mime = QMimeData()
@@ -1065,6 +1077,28 @@ def t_tgs_in_queue_and_preview():
     win.close()
 check("стикер .tgs: миниатюра, длительность, проигрывание в предпросмотре",
       t_tgs_in_queue_and_preview)
+
+
+def t_motion_preview():
+    """Видео и APNG в предпросмотре проигрываются, а не стоят одним кадром."""
+    from main_window import TAB_TWITCH
+    apng = os.path.join(WORK, "анимация.png")
+    frames = [Image.new("RGBA", (64, 64), (i * 60, 100, 200, 255)) for i in range(4)]
+    frames[0].save(apng, save_all=True, append_images=frames[1:], duration=80, loop=0)
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    win._on_scan_finished([vid, apng], [])
+    win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    preview = win.chat_previews["twitch"]
+    for row, name in ((0, "видео"), (1, "APNG")):
+        win.file_list.setCurrentRow(row)
+        deadline = _time.monotonic() + 20
+        while preview._movie is None and _time.monotonic() < deadline:
+            settle(50)
+        assert preview._movie is not None, f"{name} в предпросмотре не проигрывается"
+        assert preview._movie.frameCount() > 1, f"{name}: в копии один кадр"
+        assert not preview._is_video, f"{name}: подпись «кадр из видео» осталась"
+    win.close()
+check("предпросмотр: видео и APNG проигрываются", t_motion_preview)
 
 
 def idle_status_text():

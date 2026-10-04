@@ -18,6 +18,10 @@ versions follow [Semantic Versioning](https://semver.org/).
   picture. A picture copied in a browser keeps its animation.
 - **One-click update.** In an installed copy the update link downloads the
   new version, checks it and installs it; the app restarts by itself.
+- **Animated previews for video, APNG and animated AVIF.** The chat preview
+  used to show a single frame of them; with a still preset it still shows
+  the frame that goes into the file.
+- **A link field above the queue**: paste a link and press Enter.
 
 ### Changed
 

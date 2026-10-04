@@ -562,6 +562,11 @@ STRINGS = {
 
     # --- файлы по ссылкам ---
     "menu_add_link": ("Добавить по ссылке…", "Add from a link…"),
+    "link_placeholder": ("Ссылка на картинку, GIF или видео — и Enter",
+                         "Link to a picture, GIF or video — then Enter"),
+    "link_add": ("Добавить", "Add"),
+    "link_busy": ("Идёт обработка — ссылку можно добавить, когда она закончится",
+                  "Processing — the link can be added once it's done"),
     "dlg_link_title": ("Добавить по ссылке", "Add from a link"),
     "dlg_link_text": (
         "Ссылка на картинку, GIF, видео или стикер — прямая или на страницу "

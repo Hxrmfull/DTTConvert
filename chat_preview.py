@@ -351,6 +351,10 @@ class ChatPreview(QWidget):
         self._frame = None         # кадр с поворотом и отражением
         self._is_video = False
         self._movie = None
+        # Статичный пресет: анимация стоит на первом кадре — в файл попадёт
+        # именно он. Видео при этом подписано «кадр из видео».
+        self._still = False
+        self._movie_from_video = False
         self._code = ""
         self._fill = False
         self._transform = (0, False, False)
@@ -376,6 +380,22 @@ class ChatPreview(QWidget):
         self._cache.clear()
         self.update()
 
+    def set_still(self, still):
+        """Показывать первый кадр вместо анимации (пресет даёт картинку)."""
+        still = bool(still)
+        if still == self._still:
+            return
+        self._still = still
+        if self._movie is None:
+            return
+        if still:
+            self._movie.setPaused(True)
+            self._movie.jumpToFrame(0)
+            self._on_movie_frame(0)
+        elif self.isVisible():
+            self._resume_movie()
+        self.update()
+
     def set_active(self, active):
         """Приглушает макет, пока пресет площадки не выбран: на выходе будет
         обычный формат, и показывать «вот так это будет в чате» нечестно."""
@@ -398,9 +418,14 @@ class ChatPreview(QWidget):
         self._is_video = is_video
         self._apply_transform()
 
-    def set_movie(self, path, first_frame=None):
-        """Анимация (GIF, WEBP): проигрывается, пока предпросмотр на экране."""
+    def set_movie(self, path, first_frame=None, from_video=False):
+        """Анимация (GIF, WEBP): проигрывается, пока предпросмотр на экране.
+
+        from_video — копия сделана из видео: на статичном пресете она стоит
+        на первом кадре с подписью «кадр из видео».
+        """
         self._stop_movie()
+        self._movie_from_video = bool(from_video)
         movie = QMovie(path)
         if not movie.isValid() or movie.frameCount() == 1:
             self.set_image(first_frame)
@@ -411,7 +436,10 @@ class ChatPreview(QWidget):
         self._is_video = False
         self._source = first_frame
         self._apply_transform()
-        if self.isVisible():
+        if self._still:
+            movie.jumpToFrame(0)
+            self._on_movie_frame(0)
+        elif self.isVisible():
             movie.start()
 
     def has_content(self):
@@ -443,8 +471,11 @@ class ChatPreview(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if self._movie is None:
+        if self._movie is None or self._still:
             return
+        self._resume_movie()
+
+    def _resume_movie(self):
         # start() не снимает паузу, а скрытая вкладка ставит анимацию именно
         # на паузу — без этой ветки после возврата на вкладку смайлик замирал.
         if self._movie.state() == QMovie.MovieState.Paused:
@@ -511,7 +542,7 @@ class ChatPreview(QWidget):
         }.get(self.platform, self._paint_discord)
         paint(painter, rect, scene)
 
-        if self._is_video:
+        if self._is_video or (self._still and self._movie_from_video):
             painter.setPen(QColor(scene["muted"]))
             painter.setFont(self._font(CAPTION_PX))
             painter.drawText(rect.adjusted(0, 0, -8, -5),

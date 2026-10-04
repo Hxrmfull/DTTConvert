@@ -472,6 +472,13 @@ def t_stopped_status():
     assert E(w.file_list.item(0)).status == STATUS_STOPPED, E(w.file_list.item(0)).status
 check("GUI отменённый файл выходит из состояния «Обработка»", t_stopped_status)
 
+# Окно закрываем до выхода: closeEvent останавливает фоновые потоки (копию
+# видео для предпросмотра FFmpeg делает секундами). Без этого поток
+# уничтожался на ходу при выходе интерпретатора, и Qt ронял процесс
+# с кодом 0xC0000409 — уже после того, как все проверки прошли.
+w.close()
+app.processEvents()
+
 print()
 failed=[r for r in results if r[1]!="OK"]
 print(f"{len(results)-len(failed)}/{len(results)} passed")

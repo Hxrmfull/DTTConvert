@@ -1106,6 +1106,20 @@ class FFmpegProcessor:
         cmd += ["-progress", "pipe:1", "-nostats", output_pattern]
         self._run_with_progress(cmd, total_duration, progress_callback)
 
+    def make_preview_animation(self, input_path, output_path, size, max_seconds, fps):
+        """Короткий анимированный WEBP для предпросмотра в чате.
+
+        Видео в предпросмотре проигрывается, а не стоит одним кадром.
+        Длительность и частота ограничены: копия нужна на несколько секунд
+        показа в 28–160 px, а не для обработки.
+        """
+        cmd = self._base_cmd(input_path)
+        cmd += ["-t", f"{float(max_seconds):.3f}", "-an",
+                "-vf", f"fps={fps},scale={size}:{size}:force_original_aspect_ratio=decrease",
+                "-c:v", "libwebp", "-lossless", "0", "-q:v", "60", "-loop", "0",
+                "-progress", "pipe:1", "-nostats", output_path]
+        self._run_with_progress(cmd, None, None)
+
     def extract_single_frame(self, input_path, output_path, width, height, keep_aspect,
                              progress_callback=None, trim=None, transform=None):
         """Один кадр в картинку. trim выбирает момент, с которого его брать."""
