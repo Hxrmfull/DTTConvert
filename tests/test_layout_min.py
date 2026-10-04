@@ -32,7 +32,26 @@ w = MainWindow()
 w.resize(w.minimumWidth(), w.minimumHeight())
 w.show()
 
-TABS = {0: "Основная", 1: "Telegram", 2: "Twitch", 3: "Discord", 4: "WhatsApp"}
+TABS = {0: "Основная", 1: "Telegram", 2: "Twitch", 3: "Discord", 4: "WhatsApp",
+        5: "Kick", 6: "YouTube"}
+
+def tab_bar_problems(window, prefix=""):
+    """Кнопки вкладок не налезают друг на друга и не выходят за строку.
+
+    Каждая кнопка держит ширину своей подписи, поэтому при нехватке места
+    они не сжимаются, а наезжают одна на другую — проверка «подпись
+    помещается в кнопку» этого не видит.
+    """
+    found = []
+    buttons = window.tab_buttons
+    for left, right in zip(buttons, buttons[1:]):
+        if left.geometry().right() >= right.geometry().left():
+            found.append(f"{prefix}вкладки «{left.text()}» и «{right.text()}» налезают")
+    last = buttons[-1]
+    if last.geometry().right() > last.parentWidget().width():
+        found.append(f"{prefix}вкладка «{last.text()}» выходит за край")
+    return found
+
 
 def visible_widgets(page):
     out = []
@@ -88,6 +107,9 @@ def run():
                 problems.append((name, label_of((child,pos,size)), "ВЫХОДИТ ВНИЗ ЗА ОКНО", 0))
             if pos.x() + size.width() > w.width() + 2:
                 problems.append((name, label_of((child,pos,size)), "ОБРЕЗАН СПРАВА", 0))
+
+    for problem in tab_bar_problems(w):
+        problems.append(("строка вкладок", problem, "", 0))
 
     print()
     if problems:

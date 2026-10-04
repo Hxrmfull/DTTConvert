@@ -706,6 +706,18 @@ class FFmpegProcessor:
             progress_callback(100)
 
     @staticmethod
+    def _box_filter(width, height, transform=None):
+        """Вписывает кадр в рамку width×height, сохраняя пропорции, без полей.
+
+        Чётные стороны — для yuva420p: у нечётной кадр сдвигался бы на
+        полпикселя по цвету.
+        """
+        parts = list(transform.filters()) if transform else []
+        parts.append(f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
+                     f"force_divisible_by=2")
+        return ",".join(parts)
+
+    @staticmethod
     def _square_filter(size, transform=None, fill=False):
         """Приводит кадр к квадрату.
 
@@ -886,7 +898,7 @@ class FFmpegProcessor:
     def convert_animated_webp(self, input_path, output_path, size, max_bytes,
                               fps_cap=20, max_duration=None, max_frames=None,
                               trim=None, transform=None, fill=False,
-                              progress_callback=None):
+                              progress_callback=None, box=None):
         """Квадратный анимированный WEBP под лимит веса (WhatsApp, 7TV).
 
         В отличие от GIF у WEBP полноценная полупрозрачность и сжатие с
@@ -899,7 +911,12 @@ class FFmpegProcessor:
         trim_length = (trim or (0, 0))[1]
         limits = [float(value) for value in (trim_length, max_duration) if value]
         output_length = min(limits) if limits else None
-        vf_base = self._square_filter(size, transform, fill)
+        # box — рамка (ширина, высота) с сохранением пропорций (7TV);
+        # «заполнить квадрат» всё равно даёт квадрат.
+        if box and not fill:
+            vf_base = self._box_filter(box[0], box[1], transform)
+        else:
+            vf_base = self._square_filter(size, transform, fill)
         limit_kb = max_bytes // 1024
         last_error = None
 
@@ -1105,6 +1122,20 @@ class FFmpegProcessor:
         cmd += self._trim_output_args(trim)
         cmd += ["-progress", "pipe:1", "-nostats", output_pattern]
         self._run_with_progress(cmd, total_duration, progress_callback)
+
+    def make_preview_animation(self, input_path, output_path, size, max_seconds, fps):
+        """Короткий анимированный WEBP для предпросмотра в чате.
+
+        Видео в предпросмотре проигрывается, а не стоит одним кадром.
+        Длительность и частота ограничены: копия нужна на несколько секунд
+        показа в 28–160 px, а не для обработки.
+        """
+        cmd = self._base_cmd(input_path)
+        cmd += ["-t", f"{float(max_seconds):.3f}", "-an",
+                "-vf", f"fps={fps},scale={size}:{size}:force_original_aspect_ratio=decrease",
+                "-c:v", "libwebp", "-lossless", "0", "-q:v", "60", "-loop", "0",
+                "-progress", "pipe:1", "-nostats", output_path]
+        self._run_with_progress(cmd, None, None)
 
     def extract_single_frame(self, input_path, output_path, width, height, keep_aspect,
                              progress_callback=None, trim=None, transform=None):

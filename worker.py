@@ -42,14 +42,15 @@ from telegram_utils import (
     static_image_extension,
 )
 from twitch_utils import (
-    KIND_AUTO_GIF,
     KIND_AUTO_WEBP,
     KIND_GIF,
+    KIND_STATIC,
     is_twitch_animated_format,
     is_twitch_auto_format,
     is_twitch_format,
     twitch_preset,
 )
+from stream_platforms import is_square_platform_format, square_preset
 from whatsapp_utils import (
     MAX_ANIMATION_FPS as WHATSAPP_MAX_FPS,
     MAX_ANIMATION_SEC as WHATSAPP_MAX_SEC,
@@ -105,7 +106,7 @@ _reserved_paths = set()
 def is_animated_image(path):
     """Определяет анимацию по содержимому файла, а не по расширению.
 
-    Анимированные WebP (эмодзи с 7TV, BTTV и т.п.) и APNG сохраняются
+    Анимированные WebP (эмодзи с 7TV и т.п.) и APNG сохраняются
     с обычными расширениями .webp и .png. Раньше программа считала их
     статичными картинками и отказывалась делать из них видео-стикеры.
     """
@@ -175,13 +176,15 @@ def is_static_target(output_format):
     if fmt in TELEGRAM_FORMATS:
         return not is_telegram_video_format(fmt)
     if is_twitch_format(fmt):
-        # 7TV и BTTV анимируют то, что анимировано в исходнике, поэтому
+        # 7TV анимирует то, что анимировано в исходнике, поэтому
         # анимированной картинке нужна вся анимация, а не один кадр.
         return not (is_twitch_animated_format(fmt) or is_twitch_auto_format(fmt))
     if is_discord_format(fmt):
         return not is_discord_animated_format(fmt)
     if is_whatsapp_format(fmt):
         return not is_whatsapp_animated_format(fmt)
+    if is_square_platform_format(fmt):
+        return square_preset(fmt).kind == KIND_STATIC
     return False
 
 
@@ -425,9 +428,10 @@ class ConversionWorker(QThread):
             )
             return
 
-        if is_twitch_format(output_format):
-            self._process_twitch_job(
-                index, job, base_name, category, output_format, ffmpeg
+        if is_twitch_format(output_format) or is_square_platform_format(output_format):
+            preset = twitch_preset(output_format) or square_preset(output_format)
+            self._process_square_job(
+                index, job, base_name, category, output_format, preset, ffmpeg
             )
             return
 
@@ -679,8 +683,10 @@ class ConversionWorker(QThread):
             )
         self._emit_progress(index, 100)
 
-    def _process_twitch_job(self, index, job, base_name, category, output_format, ffmpeg):
-        """Вкладка Twitch: смайлики, значки, иконки баллов, 7TV и BTTV.
+    def _process_square_job(self, index, job, base_name, category, output_format, preset,
+                            ffmpeg):
+        """Вкладки Twitch, Kick и YouTube: смайлики, значки, иконки баллов,
+        7TV.
 
         Всё это квадраты одного или нескольких размеров под лимит веса;
         отличаются размеры, лимиты и то, анимирован ли результат.
@@ -690,13 +696,10 @@ class ConversionWorker(QThread):
         transform = transform_for(settings)
         trim = settings.effective_trim
         fill = settings.fill_square
-        preset = twitch_preset(output_format)
         moving = category in ("video", "gif", "animated_image")
 
         if preset.kind == KIND_GIF:
             animation = "gif"
-        elif preset.kind == KIND_AUTO_GIF:
-            animation = "gif" if moving else None
         elif preset.kind == KIND_AUTO_WEBP:
             animation = "webp" if moving else None
         else:
@@ -740,7 +743,7 @@ class ConversionWorker(QThread):
                         input_path, output_path, size, preset.max_bytes,
                         fps_cap=preset.fps_cap, max_frames=preset.max_frames,
                         trim=trim, transform=transform, fill=fill,
-                        progress_callback=part,
+                        progress_callback=part, box=preset.box,
                     )
                     continue
 
@@ -755,7 +758,7 @@ class ConversionWorker(QThread):
                     source = frame_path
                 ImageProcessor.convert_twitch_static(
                     source, output_path, size, transform, fill=fill,
-                    limit_bytes=preset.max_bytes,
+                    limit_bytes=preset.max_bytes, box=preset.box,
                 )
                 self._emit_progress(index, offset + int(share))
         self._emit_progress(index, 100)

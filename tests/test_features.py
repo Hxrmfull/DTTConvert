@@ -65,7 +65,7 @@ def t_version():
     assert version_string() == "1.2.2", version_string()
     # В заголовке только название и версия — подзаголовка у окна нет.
     assert w.windowTitle() == f"{APP_NAME} {version_string()}", w.windowTitle()
-    assert version_string() in w.version_label.text(), w.version_label.text()
+    assert version_string() in w.version_button.text(), w.version_button.text()
 check("версия видна в заголовке и в интерфейсе", t_version)
 
 
@@ -449,9 +449,12 @@ def t_chat_preview():
     # Видео: кадр готовит FFmpeg в фоне.
     win.file_list.setCurrentRow(1)
     deadline = _time.monotonic() + 15
-    while not (preview.has_content() and preview._is_video) and _time.monotonic() < deadline:
+    # Короткое видео сразу сменяется анимацией — годится и кадр, и она.
+    from_video = lambda: preview._is_video or (preview._movie is not None
+                                               and preview._movie_from_video)
+    while not (preview.has_content() and from_video()) and _time.monotonic() < deadline:
         settle(50)
-    assert preview._is_video and preview.has_content(), "кадр видео не пришёл"
+    assert from_video() and preview.has_content(), "кадр видео не пришёл"
     win.file_list.clearSelection(); app.processEvents()
     assert not preview.has_content(), "без выбранного файла предпросмотр должен опустеть"
     win.close()
@@ -534,6 +537,253 @@ def t_update_check():
         updater.fetch_latest_release = original
         QSettings(ORGANIZATION, ORGANIZATION).setValue("check_updates", False)
 check("проверка обновлений: ссылка появляется, отключение работает", t_update_check)
+
+
+def t_update_one_click():
+    """Обновление в один щелчок — без сети: «GitHub» отдаёт описание
+    выпуска, а установщик лежит в локальном файле (file://)."""
+    import hashlib
+    import pathlib
+    import updater
+    import main_window as mw
+
+    # Вариант сборки: по деинсталлятору рядом с exe и FFmpeg внутри сборки.
+    app_dir = os.path.join(WORK, "installed"); bundle = os.path.join(app_dir, "_internal")
+    os.makedirs(bundle, exist_ok=True)
+    exe = os.path.join(app_dir, "DTTConvert.exe")
+    assert updater.installed_variant(exe, bundle) is None, "без деинсталлятора — не установщик"
+    open(os.path.join(app_dir, "unins000.exe"), "wb").close()
+    assert updater.installed_variant(exe, bundle) == updater.VARIANT_WITHOUT_FFMPEG
+    open(os.path.join(bundle, "ffmpeg.exe"), "wb").close()
+    assert updater.installed_variant(exe, bundle) == updater.VARIANT_WITH_FFMPEG
+    assert updater.installed_variant() is None, "запуск из исходников не обновляется установщиком"
+
+    payload = b"MZ" + os.urandom(300_000)
+    src = os.path.join(WORK, "setup_src.exe"); open(src, "wb").write(payload)
+    file_url = pathlib.Path(src).as_uri()
+    prefix = file_url.rsplit("/", 1)[0] + "/"
+    name = updater.setup_asset_name("9.9.9", updater.VARIANT_WITH_FFMPEG)
+    assert name == "DTTConvert-9.9.9-windows-x64-with-ffmpeg-setup.exe"
+
+    def release(size=len(payload), digest=hashlib.sha256(payload).hexdigest(), url=file_url):
+        return {"tag_name": "v9.9.9", "html_url": "https://github.com/x/y/releases/9.9.9",
+                "assets": [{"name": name.replace("with-", "without-"), "size": 1,
+                            "browser_download_url": url},
+                           {"name": name, "size": size, "digest": f"sha256:{digest}",
+                            "browser_download_url": url}]}
+
+    original_prefix = updater.DOWNLOAD_PREFIX
+    original_fetch = updater.fetch_latest_data
+    original = (mw.installed_variant, mw.launch_installer)
+    try:
+        # Чужие ссылки и выпуск без нужного файла отвергаются.
+        assert updater.find_installer(release(), updater.VARIANT_WITH_FFMPEG) is None
+        updater.DOWNLOAD_PREFIX = prefix
+        found = updater.find_installer(release(), updater.VARIANT_WITH_FFMPEG)
+        assert found and found[0] == name and found[2] == len(payload), found
+        assert updater.find_installer({"tag_name": "v9.9.9", "html_url": "https://github.com/a",
+                                       "assets": []}, updater.VARIANT_WITH_FFMPEG) is None
+
+        # Скачивание: целиком и с верной суммой — да; иначе файла не остаётся.
+        target = os.path.join(WORK, "setup_dl.exe")
+        seen = []
+        assert updater.download_verified(file_url, target, len(payload),
+                                         hashlib.sha256(payload).hexdigest(), seen.append)
+        assert open(target, "rb").read() == payload and seen[-1] == 100
+        os.remove(target)
+        for size, digest, key in ((len(payload) + 5, None, "err_update_size"),
+                                  (len(payload) - 5, None, "err_update_size"),
+                                  (len(payload), "0" * 64, "err_update_checksum")):
+            try:
+                updater.download_verified(file_url, target, size, digest)
+                raise AssertionError(f"ошибка {key} не поднялась")
+            except updater.LocalizedRuntimeError as exc:
+                assert exc.key == key, exc.key
+            assert not os.path.exists(target) and not os.path.exists(target + ".part")
+        assert not updater.download_verified(file_url, target, len(payload), None,
+                                             cancelled=lambda: True)
+        assert not os.path.exists(target)
+
+        # Окно: щелчок → подтверждение → загрузка → запуск установщика → закрытие.
+        launched = []
+        updater.fetch_latest_data = lambda timeout=0: release()
+        mw.installed_variant = lambda: updater.VARIANT_WITH_FFMPEG
+        mw.launch_installer = launched.append
+        win = MainWindow()
+        win._on_update_found("9.9.9", "https://github.com/x/y/releases/9.9.9")
+        win.show(); settle(50)
+        win._on_update_clicked()
+        deadline = _time.monotonic() + 10
+        while not launched and _time.monotonic() < deadline:
+            settle(50)
+        assert launched, "установщик не запустился"
+        assert open(launched[0], "rb").read() == payload
+        assert os.path.basename(launched[0]) == name
+        assert not win.isVisible(), "окно не закрылось перед установкой"
+
+        # Сбой загрузки: ссылка возвращается, окно не закрывается.
+        updater.fetch_latest_data = lambda timeout=0: release(digest="0" * 64)
+        opened = []
+        win2 = MainWindow(); win2._open_update_page = lambda: opened.append(1)
+        win2._on_update_found("9.9.9", "https://github.com/x/y/releases/9.9.9")
+        win2.show(); settle(50)
+        launched.clear()
+        win2._on_update_clicked()
+        deadline = _time.monotonic() + 10
+        while win2._update_download is not None and _time.monotonic() < deadline:
+            settle(50)
+        settle(50)
+        assert not launched and win2.isVisible()
+        assert win2.update_button.isEnabled() and "9.9.9" in win2.update_button.text()
+        assert opened, "после сбоя не предложили страницу выпуска"
+        win2.close()
+    finally:
+        updater.DOWNLOAD_PREFIX = original_prefix
+        updater.fetch_latest_data = original_fetch
+        mw.installed_variant, mw.launch_installer = original
+check("обновление в один щелчок: проверка файла, запуск установщика", t_update_one_click)
+
+
+def t_links():
+    """Файлы по ссылкам — с локального сервера, без интернета."""
+    import io
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import url_import
+    from main_window import SUPPORTED_INPUT_EXTS
+
+    png = io.BytesIO(); Image.new("RGBA", (40, 40), (0, 200, 0, 255)).save(png, "PNG")
+    gif = io.BytesIO()
+    Image.new("P", (30, 30), 1).save(gif, "GIF", save_all=True,
+                                       append_images=[Image.new("P", (30, 30), 2)], duration=100)
+    routes = {
+        "/pic.png": ("image/png", png.getvalue()),
+        # CDN без расширения в адресе и с неверным типом — решает сигнатура.
+        "/emote/abc/3x": ("application/octet-stream", gif.getvalue()),
+        "/page": ("text/html", b'<html><head><meta property="og:image" '
+                               b'content="/emote/abc/3x"></head></html>'),
+        "/empty": ("text/html", b"<html><body>nothing</body></html>"),
+        "/text.txt": ("text/plain", b"hello"),
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            route = routes.get(self.path)
+            if route is None:
+                self.send_response(404); self.end_headers(); return
+            self.send_response(200)
+            self.send_header("Content-Type", route[0])
+            self.send_header("Content-Length", str(len(route[1])))
+            self.end_headers()
+            self.wfile.write(route[1])
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    store = os.path.join(WORK, "links_store")
+    original_get_json = url_import._get_json
+    try:
+        assert url_import.extract_urls(f"смотри {base}/pic.png и\n{base}/page.") == \
+            [f"{base}/pic.png", f"{base}/page"]
+        # Известные сайты — без сети (API недоступен — правило всё равно работает).
+        def offline(url):
+            raise OSError("offline")
+        url_import._get_json = offline
+        assert url_import.resolve_known_site("https://7tv.app/emotes/01ABC") == \
+            ("https://cdn.7tv.app/emote/01ABC/4x.webp", "7tv_01ABC")
+        # BTTV убран: его страница — обычная ссылка без особых правил.
+        assert url_import.resolve_known_site("https://betterttv.com/emotes/5f1b") == \
+            ("https://betterttv.com/emotes/5f1b", None)
+        assert url_import.resolve_known_site("https://www.frankerfacez.com/emoticon/28136-LilZ") == \
+            ("https://cdn.frankerfacez.com/emote/28136/4", "LilZ")
+        assert url_import.resolve_known_site("https://giphy.com/gifs/cat-funny-JIX9t2") == \
+            ("https://i.giphy.com/JIX9t2.gif", "cat-funny")
+        assert url_import.resolve_known_site(
+            "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0") == (
+            "https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/3.0", "twitch_25")
+        url_import._get_json = lambda url: {"name": "RainTime"}
+        assert url_import.resolve_known_site("https://7tv.app/emotes/01ABC")[1] == "RainTime"
+
+        # Тип — по содержимому, имя — из адреса; страница ведёт к og:image.
+        path = url_import.download_url(f"{base}/pic.png", store, SUPPORTED_INPUT_EXTS)
+        assert os.path.basename(path) == "pic.png" and open(path, "rb").read() == png.getvalue()
+        path = url_import.download_url(f"{base}/emote/abc/3x", store, SUPPORTED_INPUT_EXTS)
+        assert os.path.basename(path) == "abc.gif", path
+        path = url_import.download_url(f"{base}/page", store, SUPPORTED_INPUT_EXTS)
+        assert path.endswith(".gif") and open(path, "rb").read() == gif.getvalue()
+        for url, key in ((f"{base}/empty", "err_link_no_media"),
+                         (f"{base}/text.txt", "err_link_unsupported"),
+                         (f"{base}/missing", "err_link_download"),
+                         ("ftp://example/x.png", "err_link_bad")):
+            try:
+                url_import.download_url(url, store, SUPPORTED_INPUT_EXTS)
+                raise AssertionError(f"{url}: ошибка не поднялась")
+            except url_import.LocalizedRuntimeError as exc:
+                assert exc.key == key, (url, exc.key)
+
+        # Окно: ссылки встают в очередь, ошибки собираются в одно сообщение.
+        import main_window as mw
+        original_dir = mw.pasted_directory
+        mw.pasted_directory = lambda: store
+        warnings = []
+        original_warning = QMessageBox.warning
+        QMessageBox.warning = staticmethod(lambda *a, **k: warnings.append(a))
+        try:
+            win = MainWindow(); win.show(); settle(50)
+            win._add_files_from_urls([f"{base}/pic.png", f"{base}/text.txt"])
+            win._add_files_from_urls([f"{base}/page"])  # пока идёт первая загрузка
+            deadline = _time.monotonic() + 15
+            while (win._link_worker is not None or win.file_list.count() < 2) \
+                    and _time.monotonic() < deadline:
+                settle(50)
+            settle(100)
+            names = sorted(os.path.basename(win._entry(win.file_list.item(i)).input_path)
+                           for i in range(win.file_list.count()))
+            assert names == ["abc.gif", "pic.png"], names
+            assert len(warnings) == 1 and "text.txt" in warnings[0][2], warnings
+
+            # Поле над очередью: ссылка и Enter.
+            win.file_list.clear()
+            win.link_edit.setText(f"  {base}/pic.png  ")
+            win.link_edit.returnPressed.emit()
+            deadline = _time.monotonic() + 15
+            while win.file_list.count() < 1 and _time.monotonic() < deadline:
+                settle(50)
+            assert win.file_list.count() == 1 and win.link_edit.text() == ""
+            win.link_edit.setText("тут нет ссылки"); win._on_link_entered()
+            assert win.current_file_label.text() == "Ссылок не нашлось"
+            assert win.link_edit.text() == "тут нет ссылки", "текст без ссылки стёрт"
+
+            # Ctrl+V из браузера: адрес из <img src> важнее картинки в буфере.
+            from PyQt6.QtCore import QMimeData
+            mime = QMimeData()
+            mime.setHtml(f'<img src="{base}/emote/abc/3x">')
+            mime.setImageData(QImage(8, 8, QImage.Format.Format_ARGB32))
+            QApplication.clipboard().setMimeData(mime)
+            win.file_list.clear()
+            win._paste_from_clipboard()
+            deadline = _time.monotonic() + 15
+            while win.file_list.count() < 1 and _time.monotonic() < deadline:
+                settle(50)
+            entry = win._entry(win.file_list.item(0))
+            assert entry.input_path.endswith(".gif"), entry.input_path
+            win.close()
+        finally:
+            mw.pasted_directory = original_dir
+            QMessageBox.warning = original_warning
+
+        # Старые загрузки чистятся целиком, свежие остаются.
+        old = url_import.link_directory(store)
+        os.utime(old, (0, 0))
+        url_import.cleanup_links(store, 7)
+        assert not os.path.exists(old) and os.listdir(os.path.join(store, "links"))
+    finally:
+        url_import._get_json = original_get_json
+        server.shutdown()
+check("файлы по ссылкам: прямые, страницы, Ctrl+V из браузера", t_links)
 
 
 def t_twitch_long_warning():
@@ -645,7 +895,7 @@ def t_queue_row_fits():
     from errors import LocalizedRuntimeError
     long_name = os.path.join(WORK, "очень_длинное_имя_файла_для_проверки_очереди_" * 2 + ".png")
     Image.new("RGB", (64, 64), (0, 120, 200)).save(long_name)
-    win = MainWindow(); win.resize(980, 680); win.show(); settle(100)
+    win = MainWindow(); win.resize(1010, 680); win.show(); settle(100)
     win._on_scan_finished([long_name, img], []); settle(100)
     item = win.file_list.item(1)
     entry = item.data(DATA_ROLE)
@@ -672,7 +922,7 @@ check("строка очереди: без прокрутки вбок, форм
 
 def t_bottom_row_fits():
     for language in ("ru", "en"):
-        win = MainWindow(); win.resize(980, 680); win.show(); settle(100)
+        win = MainWindow(); win.resize(1010, 680); win.show(); settle(100)
         win.language_combo.setCurrentIndex(win.language_combo.findData(language)); settle(100)
         win.report_button.setVisible(True)
         win.open_folder_button.setVisible(True)
@@ -686,12 +936,12 @@ def t_bottom_row_fits():
             assert widget.width() >= widget.sizeHint().width() - 1, \
                 (language, widget.text() if hasattr(widget, "text") else widget, widget.width(),
                  widget.sizeHint().width())
-        assert not win.version_label.isVisible(), "ссылка на обновление должна заменить номер"
+        assert not win.version_button.isVisible(), "ссылка на обновление должна заменить номер"
         # Полный итог — в text() и в подсказке, даже если на экране сокращён.
         assert "заняло" in win.current_file_label.text()
         win.language_combo.setCurrentIndex(win.language_combo.findData("ru")); settle(50)
         win.close()
-check("низ окна: при 980 px ничего не обрезано", t_bottom_row_fits)
+check("низ окна: при 1010 px ничего не обрезано", t_bottom_row_fits)
 
 
 def t_numbers_and_plurals():
@@ -831,6 +1081,108 @@ def t_tgs_in_queue_and_preview():
     win.close()
 check("стикер .tgs: миниатюра, длительность, проигрывание в предпросмотре",
       t_tgs_in_queue_and_preview)
+
+
+def t_motion_preview():
+    """Видео и APNG в предпросмотре проигрываются, а не стоят одним кадром."""
+    from main_window import TAB_TWITCH
+    apng = os.path.join(WORK, "анимация.png")
+    frames = [Image.new("RGBA", (64, 64), (i * 60, 100, 200, 255)) for i in range(4)]
+    frames[0].save(apng, save_all=True, append_images=frames[1:], duration=80, loop=0)
+    win = MainWindow(); win.resize(1140, 790); win.show(); settle(100)
+    win._on_scan_finished([vid, apng], [])
+    win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    preview = win.chat_previews["twitch"]
+    for row, name in ((0, "видео"), (1, "APNG")):
+        win.file_list.setCurrentRow(row)
+        deadline = _time.monotonic() + 20
+        while preview._movie is None and _time.monotonic() < deadline:
+            settle(50)
+        assert preview._movie is not None, f"{name} в предпросмотре не проигрывается"
+        assert preview._movie.frameCount() > 1, f"{name}: в копии один кадр"
+        assert not preview._is_video, f"{name}: подпись «кадр из видео» осталась"
+    win.close()
+check("предпросмотр: видео и APNG проигрываются", t_motion_preview)
+
+
+def t_motion_rules_and_toggle():
+    """Анимируется только короткое; длинное видео — кадр; переключатель в меню."""
+    import media_motion
+    from main_window import TAB_TWITCH
+    from widgets import PopupMenu
+    long_video = os.path.join(WORK, "длинное.mp4")
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i",
+                    "testsrc=duration=12:size=64x64:rate=5", "-pix_fmt", "yuv420p",
+                    long_video], check=True, capture_output=True)
+    gif = os.path.join(WORK, "смайл.gif")
+    frames = [Image.new("RGB", (40, 40), (i * 50, 90, 200)) for i in range(5)]
+    frames[0].save(gif, save_all=True, append_images=frames[1:], duration=80, loop=0)
+    assert media_motion.is_short(3) and not media_motion.is_short(12)
+
+    win = MainWindow(); win.resize(1140, 790); win.show()
+    win.activateWindow(); settle(300)  # анимации идут только в активном окне
+    win._on_scan_finished([long_video, gif], [])
+    win.settings_tabs.setCurrentIndex(TAB_TWITCH); settle(260)
+    preview = win.chat_previews["twitch"]
+
+    # Длинное видео: в предпросмотре кадр, в очереди не анимируется.
+    win.file_list.setCurrentRow(0)
+    deadline = _time.monotonic() + 20
+    while long_video not in win._motion_sources and _time.monotonic() < deadline:
+        settle(50)
+    assert win._motion_sources.get(long_video) == "", "длинное видео получило анимацию"
+    assert preview._movie is None and preview._is_video, "длинное видео проигрывается"
+
+    # Короткий GIF анимируется и в очереди, и в предпросмотре.
+    win.file_list.setCurrentRow(1)
+    deadline = _time.monotonic() + 10
+    while (gif not in win._queue_movies or preview._movie is None) \
+            and _time.monotonic() < deadline:
+        settle(50)
+    assert gif in win._queue_movies, "миниатюра GIF в очереди не анимирована"
+    assert long_video not in win._queue_movies
+    assert preview._movie is not None
+
+    # Меню версии: оформлено как список, в нём переключатель анимации.
+    menu = win.version_button.menu()
+    assert isinstance(menu, PopupMenu)
+    win._fill_version_menu(menu)
+    texts = [action.text() for action in menu.actions()]
+    assert any("Анимация файлов" in text for text in texts), texts
+    assert any("журнала" in text for text in texts), texts
+    toggle = next(a for a in menu.actions() if "Анимация файлов" in a.text())
+    assert toggle.isChecked()
+
+    # Выключили — всё стоит; включили — снова идёт.
+    toggle.trigger(); settle(300)
+    assert not win._queue_movies and preview._movie is None, "анимация не выключилась"
+    assert QSettings(ORGANIZATION, ORGANIZATION).value("animate_media", True, type=bool) is False
+    win._fill_version_menu(menu)
+    toggle = next(a for a in menu.actions() if "Анимация файлов" in a.text())
+    assert not toggle.isChecked()
+    toggle.trigger(); settle(300)
+    assert gif in win._queue_movies and preview._movie is not None, "анимация не вернулась"
+
+    # Окно стало неактивным (щёлкнули по другому окну) — всё стоит.
+    from PyQt6.QtWidgets import QWidget
+    from PyQt6.QtGui import QMovie
+    other = QWidget(); other.resize(200, 100); other.show(); other.activateWindow()
+    deadline = _time.monotonic() + 5
+    while win.isActiveWindow() and _time.monotonic() < deadline:
+        settle(50)
+    settle(300)
+    assert not win._queue_movies, "в неактивном окне миниатюры анимируются"
+    assert preview._movie.state() != QMovie.MovieState.Running, "предпросмотр не на паузе"
+    win.activateWindow()
+    deadline = _time.monotonic() + 5
+    while not win._queue_movies and _time.monotonic() < deadline:
+        settle(50)
+    assert gif in win._queue_movies, "после возврата в окно анимация не пошла"
+    assert preview._movie.state() == QMovie.MovieState.Running
+    other.close()
+    win.close()
+check("анимация файлов: только короткие, переключатель в меню версии",
+      t_motion_rules_and_toggle)
 
 
 def idle_status_text():

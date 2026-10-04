@@ -178,10 +178,10 @@ STRINGS = {
     "stop_tip": ("Прервать обработку (Esc)", "Interrupt processing (Esc)"),
     "stop_off": ("Недоступно: обработка не запущена",
                  "Unavailable: processing is not running"),
-    "version_tip": ("{app} {version}\nДвойной щелчок — открыть папку журнала.\n"
-                    "Правый щелчок или Enter — меню.",
-                    "{app} {version}\nDouble-click to open the log folder.\n"
-                    "Right-click or Enter opens the menu."),
+    "version_tip": ("{app} {version}\nМеню: проверка обновлений, анимация файлов, "
+                    "папка журнала.",
+                    "{app} {version}\nMenu: update check, file animation, log folder."),
+    "version_accessible": ("Версия {version}, меню", "Version {version}, menu"),
     "tab_accessible": ("Вкладка {name}", "{name} tab"),
     "queue_tip": ("Порядок обработки меняется перетаскиванием или Alt+↑ / Alt+↓. "
                   "Обрабатываются только отмеченные галочкой файлы.",
@@ -432,27 +432,24 @@ STRINGS = {
         "Channel Points reward icon: PNG, {sizes}, transparent background, "
         "each no larger than {limit}."),
     "hint_7tv": (
-        "Смайлик 7TV: {size}×{size} px. Из видео и анимации — анимированный "
-        "WEBP (до {frames} кадров), из картинки — PNG. Не больше {limit}.",
-        "7TV emote: {size}×{size} px. Video and animations become an animated "
-        "WEBP (up to {frames} frames), still pictures a PNG. No larger than {limit}."),
-    "hint_bttv": (
-        "Смайлик BTTV: {size}×{size} px. Из видео и анимации — GIF, из картинки "
-        "— PNG. Не больше {limit}.",
-        "BTTV emote: {size}×{size} px. Video and animations become a GIF, still "
-        "pictures a PNG. No larger than {limit}."),
+        "Смайлик 7TV: высота {size} px, ширина по пропорциям картинки — до {width} "
+        "(широкие смайлики 7TV показывает так же). Из видео и анимации — "
+        "анимированный WEBP (до {frames} кадров), из картинки — PNG. Не больше "
+        "{limit}. «Заполнить квадрат» обрежет до {size}×{size}.",
+        "7TV emote: {size} px high, as wide as the picture's proportions allow — up "
+        "to {width} (7TV shows wide emotes the same way). Video and animations become "
+        "an animated WEBP (up to {frames} frames), still pictures a PNG. No larger "
+        "than {limit}. \"Fill the square\" crops it to {size}×{size}."),
     "col_twitch_emotes": ("СМАЙЛИКИ TWITCH", "TWITCH EMOTES"),
     "col_twitch_more": ("ЗНАЧКИ И РАСШИРЕНИЯ", "BADGES AND EXTENSIONS"),
     "preset_twitch_badge": ("Значок подписки (3 файла)", "Sub badge (3 files)"),
     "preset_twitch_points": ("Значок баллов (3 файла)", "Points icon (3 files)"),
     "preset_7tv": ("Смайлик 7TV", "7TV emote"),
-    "preset_bttv": ("Смайлик BTTV", "BTTV emote"),
     # Подписи форматов площадок — одна схема «Площадка: что и в чём»:
     # раньше рядом стояли «TG Стикер», «DC Эмодзи», «WA Стикер» и «Twitch PNG».
     "lbl_twitch_badge_pack": ("Twitch: значок 18/36/72", "Twitch: badge 18/36/72"),
     "lbl_twitch_points_pack": ("Twitch: баллы 28/56/112", "Twitch: points 28/56/112"),
-    "lbl_7tv": ("7TV: смайлик 128×128", "7TV: emote 128×128"),
-    "lbl_bttv": ("BTTV: смайлик 112×112", "BTTV: emote 112×112"),
+    "lbl_7tv": ("7TV: смайлик высотой 128", "7TV: emote 128 high"),
 
     # --- WhatsApp ---
     "tab_whatsapp_tip": ("Готовые пресеты стикеров WhatsApp",
@@ -481,6 +478,60 @@ STRINGS = {
         "WhatsApp pack icon: PNG {size}×{size} px, no larger than {limit} KB. "
         "One is needed per pack."),
 
+    # --- Kick ---
+    "tab_kick_tip": ("Готовые пресеты смайликов и значков Kick",
+                     "Ready-made Kick emote and badge presets"),
+    "col_kick_emotes": ("СМАЙЛИКИ", "EMOTES"),
+    "col_kick_more": ("ЗНАЧКИ", "BADGES"),
+    "preset_kick_emote": ("Смайлик PNG 500 px", "Emote PNG 500 px"),
+    "preset_kick_emote_gif": ("Анимированный GIF", "Animated GIF"),
+    "preset_kick_badge_pack": ("Значок подписки (2 файла)", "Sub badge (2 files)"),
+    "lbl_kick_emote": ("Kick: смайлик PNG 500", "Kick: emote PNG 500"),
+    "lbl_kick_emote_gif": ("Kick: анимированный смайлик GIF", "Kick: animated emote GIF"),
+    "lbl_kick_badge_pack": ("Kick: значок подписки", "Kick: sub badge"),
+    "hint_kick_emote": (
+        "Смайлик Kick: PNG {size}×{size} px, квадрат с прозрачным фоном, меньше "
+        "{limit}. В чате Kick сам уменьшает его до 112, 56 и 28 px.",
+        "Kick emote: PNG {size}×{size} px, a square with a transparent background, "
+        "under {limit}. Kick scales it down to 112, 56 and 28 px for the chat."),
+    "hint_kick_emote_gif": (
+        "Анимированный смайлик Kick: GIF {size}×{size} px, меньше {limit} — FPS "
+        "подбирается автоматически. Kick принимает до 500 px, но в чате смайлик не "
+        "крупнее 112 px, а GIF на 500 px почти никогда не укладывается в лимит. "
+        "Нужно видео, GIF или анимированная картинка.",
+        "Kick animated emote: GIF {size}×{size} px, under {limit} — the FPS is chosen "
+        "automatically. Kick takes up to 500 px, but the chat never shows an emote "
+        "larger than 112 px, and a 500 px GIF almost never fits the limit. Needs a "
+        "video, GIF or animated picture."),
+    "hint_kick_badge_pack": (
+        "Значок подписки Kick: PNG с прозрачным фоном, комплект {sizes} px. Размер "
+        "Kick не называет; обычно загружают 36×36, а 72 — для чётких экранов.",
+        "Kick sub badge: PNG with a transparent background, a {sizes} px set. Kick "
+        "doesn't name a size; 36×36 is the usual upload, 72 is for sharp screens."),
+    "preview_msg_kick": ("вот это момент", "what a moment"),
+
+    # --- YouTube ---
+    "tab_youtube_tip": ("Готовые пресеты эмодзи и значков спонсоров YouTube",
+                        "Ready-made YouTube member emoji and badge presets"),
+    "col_yt_members": ("ДЛЯ СПОНСОРОВ КАНАЛА", "FOR CHANNEL MEMBERS"),
+    "preset_youtube_emoji": ("Эмодзи 480 px", "Emoji 480 px"),
+    "preset_youtube_badge": ("Значок спонсора 128 px", "Member badge 128 px"),
+    "lbl_youtube_emoji": ("YouTube: эмодзи 480", "YouTube: emoji 480"),
+    "lbl_youtube_badge": ("YouTube: значок спонсора 128", "YouTube: member badge 128"),
+    "hint_youtube_emoji": (
+        "Эмодзи канала YouTube: PNG {size}×{size} px (YouTube принимает от 48 до 480), "
+        "меньше {limit}. Анимацию YouTube не показывает — из видео и GIF берётся "
+        "первый кадр.",
+        "YouTube channel emoji: PNG {size}×{size} px (YouTube takes 48 to 480), under "
+        "{limit}. YouTube doesn't animate emoji — a video or GIF gives its first frame."),
+    "hint_youtube_badge": (
+        "Значок спонсора YouTube: PNG {size}×{size} px (не меньше 32), меньше {limit}. "
+        "В чате он показывается в 16 px — мелкие детали пропадут.",
+        "YouTube member badge: PNG {size}×{size} px (at least 32), under {limit}. The "
+        "chat shows it at 16 px, so fine details get lost."),
+    "preview_msg_youtube": ("лучший стрим", "best stream"),
+    "preview_msg_youtube2": ("всем привет", "hi everyone"),
+
     # --- режим вписывания в квадрат ---
     "fill_square": ("Заполнить квадрат (обрезать края)", "Fill the square (crop edges)"),
     "fill_square_tip": ("Включено — картинка заполняет квадрат целиком, лишнее по "
@@ -498,13 +549,43 @@ STRINGS = {
 
     # --- вставка из буфера обмена ---
     "menu_paste": ("Вставить из буфера (Ctrl+V)", "Paste from clipboard (Ctrl+V)"),
-    "paste_nothing": ("В буфере обмена нет картинки или файлов",
-                      "The clipboard holds no picture or files"),
+    "paste_nothing": ("В буфере обмена нет картинки, ссылки или файлов",
+                      "The clipboard holds no picture, link or files"),
     "paste_added": ("Из буфера добавлено: {count}", "Added from the clipboard: {count}"),
     "paste_failed": ("Не удалось сохранить картинку из буфера: {error}",
                      "Could not save the clipboard picture: {error}"),
-    "drop_hint_paste": ("Ctrl+V — вставить картинку из буфера",
-                        "Ctrl+V pastes a picture from the clipboard"),
+    "drop_hint_paste": ("Ctrl+V — вставить картинку или ссылку из буфера",
+                        "Ctrl+V pastes a picture or a link from the clipboard"),
+
+    # --- файлы по ссылкам ---
+    "menu_add_link": ("Добавить по ссылке…", "Add from a link…"),
+    "link_placeholder": ("Ссылка на картинку, GIF или видео — и Enter",
+                         "Link to a picture, GIF or video — then Enter"),
+    "link_add": ("Добавить", "Add"),
+    "link_busy": ("Идёт обработка — ссылку можно добавить, когда она закончится",
+                  "Processing — the link can be added once it's done"),
+    "dlg_link_title": ("Добавить по ссылке", "Add from a link"),
+    "dlg_link_text": (
+        "Ссылка на картинку, GIF, видео или стикер — прямая или на страницу "
+        "(7TV, FFZ, Giphy и другие сайты). Несколько ссылок — каждая "
+        "с новой строки.",
+        "A link to a picture, GIF, video or sticker — a direct one or to a page "
+        "(7TV, FFZ, Giphy and other sites). Several links — one per line."),
+    "link_none": ("Ссылок не нашлось", "No links found"),
+    "link_downloading": ("Загрузка по ссылкам: {done} из {total}…",
+                         "Downloading links: {done} of {total}…"),
+    "link_added": ("По ссылкам скачано: {count}", "Downloaded from links: {count}"),
+    "link_result": ("По ссылкам скачано: {added}, не удалось: {failed}",
+                    "Downloaded from links: {added}, failed: {failed}"),
+    "dlg_link_failed_title": ("Не всё скачалось", "Some links failed"),
+    "err_link_bad": ("Это не ссылка http или https", "This isn't an http or https link"),
+    "err_link_download": ("Не удалось скачать файл:", "Couldn't download the file:"),
+    "err_link_no_media": ("На странице не нашлось картинки или видео",
+                          "No picture or video found on the page"),
+    "err_link_unsupported": ("По ссылке не картинка, не видео и не стикер",
+                             "The link is not a picture, video or sticker"),
+    "err_link_cancelled": ("Загрузка прервана", "Download cancelled"),
+    "err_link_too_big": ("Файл больше {limit} МБ", "The file is larger than {limit} MB"),
 
     # --- предпросмотр в чате ---
     "preview_title": ("Так результат будет выглядеть в чате",
@@ -536,9 +617,49 @@ STRINGS = {
                    "Version {current} is installed, {version} is out. Click to open "
                    "the release page on GitHub. The check can be turned off from "
                    "the right-click menu."),
+    "update_tip_install": ("Установлена версия {current}, вышла {version}. Щелчок "
+                           "скачивает и ставит новую версию. Что в ней нового — "
+                           "в меню по правому щелчку.",
+                           "Version {current} is installed, {version} is out. Click to "
+                           "download and install it. See what's new from the "
+                           "right-click menu."),
+    "update_downloading": ("Загрузка {percent} %", "Downloading {percent}%"),
+    "menu_release_page": ("Что нового в новой версии", "What's new in the new version"),
+    "dlg_update_title": ("Обновление", "Update"),
+    "dlg_update_text": (
+        "Скачать и установить версию {version}?\n\nПосле загрузки программа "
+        "закроется, установщик поставит новую версию поверх и запустит её. "
+        "Настройки сохранятся.",
+        "Download and install version {version}?\n\nOnce downloaded, the app "
+        "closes, the installer puts the new version over the old one and starts "
+        "it. Settings are kept."),
+    "btn_update_install": ("Обновить", "Update"),
+    "dlg_update_busy": ("Идёт обработка файлов. Обновить программу можно, когда "
+                        "она закончится.",
+                        "Files are being processed. The app can be updated once "
+                        "that is done."),
+    "dlg_update_failed_title": ("Обновление не удалось", "Update failed"),
+    "dlg_update_failed_text": (
+        "Не получилось скачать или запустить установщик:\n{error}\n\nНовую "
+        "версию можно скачать со страницы выпуска.",
+        "Couldn't download or start the installer:\n{error}\n\nThe new "
+        "version can be downloaded from the release page."),
+    "btn_open_release_page": ("Открыть страницу", "Open the page"),
+    "err_update_no_installer": ("в выпуске нет установщика для этой сборки",
+                                "the release has no installer for this build"),
+    "err_update_size": ("файл скачался не полностью", "the file didn't download completely"),
+    "err_update_checksum": ("контрольная сумма файла не совпала с указанной на GitHub",
+                            "the file's checksum doesn't match the one on GitHub"),
     "update_check_toggle": ("Проверять обновления при запуске",
                             "Check for updates at startup"),
     "menu_open_log": ("Открыть папку журнала", "Open the log folder"),
+    "menu_animate_media": ("Анимация файлов в очереди и предпросмотре",
+                           "Animate files in the queue and preview"),
+    "menu_animate_media_tip": (
+        "Короткие анимации и видео (до 10 сек) проигрываются в миниатюрах очереди "
+        "и в предпросмотре. Длинные видео всегда стоят одним кадром.",
+        "Short animations and videos (up to 10 s) play in queue thumbnails and the "
+        "preview. Long videos always show a single frame."),
     "hint_dc_sticker_png": (
         "Статичный стикер Discord: PNG, ровно {size}×{size} px, квадрат "
         "с прозрачным фоном, не больше {limit}.",
@@ -579,8 +700,9 @@ STRINGS = {
     "lbl_dc_emoji_png": ("Discord: эмодзи PNG", "Discord: PNG emoji"),
     "lbl_dc_emoji_gif": ("Discord: эмодзи GIF", "Discord: GIF emoji"),
 
-    "kb": ("{value} КБ", "{value} KB"),
-    "mb": ("{value} МБ", "{value} MB"),
+    # Неразрывный пробел: число не отрывается от единицы при переносе строки.
+    "kb": ("{value} КБ", "{value} KB"),
+    "mb": ("{value} МБ", "{value} MB"),
 
     # --- ошибки обработки (errors.LocalizedError) ---
     "err_source_missing": ("Исходный файл не найден: {name}",

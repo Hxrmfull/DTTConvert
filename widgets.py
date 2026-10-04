@@ -9,6 +9,7 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QEvent,
     QObject,
+    QParallelAnimationGroup,
     QPoint,
     QPointF,
     QPropertyAnimation,
@@ -16,10 +17,9 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     pyqtProperty,
-    pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
-from PyQt6.QtWidgets import (QAbstractButton, QCheckBox, QLabel, QStyle,
+from PyQt6.QtWidgets import (QAbstractButton, QCheckBox, QLabel, QMenu, QStyle,
                              QStyledItemDelegate, QStyleOptionViewItem)
 
 from styles import palette
@@ -203,32 +203,55 @@ class ElidedLabel(QLabel):
         painter.end()
 
 
-class MenuLabel(QLabel):
-    """Подпись с контекстным меню, до которого можно добраться с клавиатуры.
+class PopupMenu(QMenu):
+    """Меню в одном стиле с выпадающими списками.
 
-    Номер версии открывает папку журнала двойным щелчком, а меню —
-    правым. Мышью это работало, с клавиатуры — нет: подпись не брала
-    фокус. Теперь до неё доходит Tab, а Enter, пробел, клавиша меню или
-    Shift+F10 открывают то же меню.
+    Скруглённая карточка с теми же цветами и отступами, что у списков
+    (правила QMenu#PopupMenu), и плавное появление: меню проявляется и
+    чуть съезжает на место, как раскрывается список. Окно меню без
+    системной рамки и тени — иначе за скруглёнными углами торчал бы
+    прямоугольник, как было у списков (см. round_combo_popup).
     """
 
-    menuRequested = pyqtSignal(QPoint)
+    SLIDE_PX = 6
+    APPEAR_MS = 140
 
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
-        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.menuRequested)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("PopupMenu")
+        self.setWindowFlags(self.windowFlags()
+                            | Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setToolTipsVisible(True)
+        self._appear = None
 
-    def keyPressEvent(self, event):
-        key = event.key()
-        shift_f10 = (key == Qt.Key.Key_F10
-                     and event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space,
-                   Qt.Key.Key_Menu) or shift_f10:
-            self.menuRequested.emit(self.rect().center())
-            return
-        super().keyPressEvent(event)
+    def showEvent(self, event):
+        super().showEvent(event)
+        end = self.pos()
+        group = QParallelAnimationGroup(self)
+        fade = QPropertyAnimation(self, b"windowOpacity", group)
+        fade.setDuration(self.APPEAR_MS)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        slide = QPropertyAnimation(self, b"pos", group)
+        slide.setDuration(self.APPEAR_MS)
+        slide.setStartValue(end - QPoint(0, self.SLIDE_PX))
+        slide.setEndValue(end)
+        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        group.addAnimation(fade)
+        group.addAnimation(slide)
+        self.setWindowOpacity(0.0)
+        self._appear = group
+        group.start()
+
+    def hideEvent(self, event):
+        if self._appear is not None:
+            self._appear.stop()
+            self._appear = None
+        self.setWindowOpacity(1.0)
+        super().hideEvent(event)
 
 
 def round_combo_popup(combo):

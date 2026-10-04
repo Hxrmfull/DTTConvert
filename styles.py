@@ -20,6 +20,8 @@ THEME_TELEGRAM = "telegram"
 THEME_TWITCH = "twitch"
 THEME_DISCORD = "discord"
 THEME_WHATSAPP = "whatsapp"
+THEME_KICK = "kick"
+THEME_YOUTUBE = "youtube"
 
 # Основная тема. Роли названы по назначению, а не по цвету: одинаковые
 # значения у разных ролей — совпадение, темы площадок их разводят.
@@ -118,6 +120,9 @@ BASE_PALETTE = {
     "status_done": "#5cc98f",
     "status_error": "#ff7a85",
     "status_stopped": "#c9a227",
+    # Выделенный текст в полях: поверх акцента. Белый не читается на
+    # кислотно-зелёном акценте Kick — там он тёмный.
+    "selection_text": "#ffffff",
     "warning_text": "#ff6b6b",
 }
 
@@ -210,9 +215,58 @@ PLATFORM_OVERRIDES = {
         "section_text": "#25d366", "hint_text": "#99a8b1",
         "toggle_track_off": "#2a3942", "toggle_track_on_disabled": "#0b4a3e",
     },
+    # Kick: почти чёрный фон и кислотно-зелёный акцент. На таком зелёном
+    # белый текст не читается, поэтому кнопки и выделение — тёмно-зелёные,
+    # а яркий зелёный остаётся для рамок, подписей и тумблеров.
+    THEME_KICK: {
+        "surface": "#141517", "card_border": "#2f3237",
+        "border_subtle": "#2f3237", "hover_bg": "#1d1f22",
+        "text": "#e8e8e8", "bright_text": "#ffffff",
+        "accent": "#53fc18", "accent_hover": "#6ffd3d", "accent_bright": "#53fc18",
+        "selected_bg": "#1f4a10", "selected_hover": "#275a15",
+        "tab_bg": "#191b1e", "tab_text": "#b0b3b8", "tab_hover_bg": "#24272b",
+        "tab_checked_border": "#53fc18",
+        "button_bg": "#24272b", "button_text": "#e8e8e8", "button_border": "#3d4147",
+        "button_hover_bg": "#2e3237", "hover_border": "#5a6068",
+        "button_pressed": "#1a1c1f",
+        "primary_bg": "#1f6a0c", "primary_hover": "#267f10",
+        "callout_bg": "#1b1d20", "callout_text": "#c9ccd1",
+        "caption_text": "#8fe86b", "caption_line": "#2f3237",
+        "note_text": "#9a9ea5",
+        "popup_bg": "#191b1e", "popup_hover": "#24272b", "popup_selected": "#1f4a10",
+        "check_border": "#6a6f76", "check_text": "#dcdee1",
+        "input_border": "#676c73", "input_border_hover": "#7d8289",
+        "section_text": "#53fc18", "hint_text": "#a6aab0",
+        "toggle_track_off": "#2f3237", "toggle_track_on_disabled": "#22401a",
+        "selection_text": "#0b0c0d",
+    },
+    # YouTube: тёмная тема самого YouTube и его красный. Красный кнопок
+    # темнее фирменного #ff0000: белый текст на нём давал меньше 4,5.
+    THEME_YOUTUBE: {
+        "surface": "#181818", "card_border": "#303030",
+        "border_subtle": "#303030", "hover_bg": "#222222",
+        "text": "#f1f1f1", "bright_text": "#ffffff",
+        "accent": "#ff3b30", "accent_hover": "#ff5a50", "accent_bright": "#ff6e66",
+        "selected_bg": "#5a1714", "selected_hover": "#6c1c18",
+        "tab_bg": "#1f1f1f", "tab_text": "#aaaaaa", "tab_hover_bg": "#2a2a2a",
+        "tab_checked_border": "#ff3b30",
+        "button_bg": "#272727", "button_text": "#f1f1f1", "button_border": "#3f3f3f",
+        "button_hover_bg": "#323232", "hover_border": "#5f5f5f",
+        "button_pressed": "#1c1c1c",
+        "primary_bg": "#cc0000", "primary_hover": "#e00000",
+        "callout_bg": "#212121", "callout_text": "#cfcfcf",
+        "caption_text": "#ff8a82", "caption_line": "#303030",
+        "note_text": "#a0a0a0",
+        "popup_bg": "#1f1f1f", "popup_hover": "#2a2a2a", "popup_selected": "#5a1714",
+        "check_border": "#717171", "check_text": "#e0e0e0",
+        "input_border": "#6c6c6c", "input_border_hover": "#848484",
+        "section_text": "#ff6e66", "hint_text": "#aaaaaa",
+        "toggle_track_off": "#303030", "toggle_track_on_disabled": "#4a1a17",
+    },
 }
 
-THEMES = (THEME_MAIN, THEME_TELEGRAM, THEME_TWITCH, THEME_DISCORD, THEME_WHATSAPP)
+THEMES = (THEME_MAIN, THEME_TELEGRAM, THEME_TWITCH, THEME_DISCORD, THEME_WHATSAPP,
+          THEME_KICK, THEME_YOUTUBE)
 
 
 def palette(theme=THEME_MAIN):
@@ -267,9 +321,9 @@ QPushButton#TabButton {
     color: $tab_text;
     border: 1px solid $border_subtle;
     border-radius: 6px;
-    /* Поля по бокам скромные: вкладок четыре, и при 16 px самая длинная
-       подпись переставала помещаться в узкую правую панель и обрезалась. */
-    padding: 7px 12px;
+    /* Поля по бокам скромные: вкладок семь, и при больших полях строка
+       не помещалась в правую панель — кнопки наезжали друг на друга. */
+    padding: 7px 10px;
     font-weight: 500;
 }
 
@@ -509,6 +563,7 @@ QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
     padding: 6px 8px;
     color: $text;
     selection-background-color: $accent;
+    selection-color: $selection_text;
 }
 
 /* Список — обычный, под полем, а не «меню» поверх него. В режиме меню
@@ -556,6 +611,78 @@ QComboBox::down-arrow:disabled {
 QFrame#ComboPopup {
     background: transparent;
     border: none;
+}
+
+/* Меню — та же карточка, что у выпадающего списка: скругление, отступы,
+   подсветка пункта. Без этих правил оно было плоским системным меню и
+   выглядело чужим рядом со списками. */
+QMenu#PopupMenu {
+    background-color: $popup_bg;
+    border: 1px solid $card_border;
+    border-radius: 8px;
+    padding: 5px;
+}
+
+QMenu#PopupMenu::item {
+    background: transparent;
+    color: $text;
+    border-radius: 5px;
+    padding: 7px 16px 7px 32px;
+}
+
+QMenu#PopupMenu::item:selected {
+    background-color: $popup_hover;
+    color: $bright_text;
+}
+
+QMenu#PopupMenu::item:disabled {
+    color: $note_text;
+}
+
+QMenu#PopupMenu::separator {
+    height: 1px;
+    background: $card_border;
+    margin: 5px 8px;
+}
+
+QMenu#PopupMenu::indicator {
+    width: 14px;
+    height: 14px;
+    left: 10px;
+}
+
+QMenu#PopupMenu::indicator:checked {
+    image: url("$check_icon");
+}
+
+/* Номер версии в правом верхнем углу — тихая кнопка, открывающая меню. */
+QPushButton#VersionButton {
+    background: transparent;
+    color: $hint_text;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 22px 4px 8px;
+}
+
+QPushButton#VersionButton:hover {
+    background: $hover_bg;
+    border-color: $border_subtle;
+    color: $text;
+}
+
+QPushButton#VersionButton::menu-indicator {
+    image: url("$arrow_down_icon");
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 10px;
+    height: 6px;
+    right: 7px;
+}
+
+/* Язык в углу — компактнее обычного списка: строка заголовка не должна
+   расти, у вкладок настроек запас по высоте небольшой. */
+QComboBox#CornerCombo {
+    padding: 3px 8px;
 }
 
 /* Выпадающий список: своя карточка со скруглением и «воздухом» вокруг
@@ -869,6 +996,28 @@ def _draw_arrow(path, color, pointing_down):
     pixmap.save(path, "PNG")
 
 
+def _draw_check(path, color):
+    """Галочка для пунктов-переключателей меню (QSS её не рисует)."""
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
+
+    size = 28
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(color), 3.4)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    check = QPainterPath(QPointF(5.5, 14.5))
+    check.lineTo(11.5, 20.5)
+    check.lineTo(22.5, 8.0)
+    painter.drawPath(check)
+    painter.end()
+    pixmap.save(path, "PNG")
+
+
 # Иконки рисуются один раз на процесс: темы переключаются на каждой смене
 # вкладки, и перерисовывать PNG при этом незачем.
 _arrow_icons = None
@@ -899,6 +1048,12 @@ def _arrow_icon_paths(colors):
             continue
         # В QSS путь всегда через прямые слэши, даже на Windows.
         paths[key] = icon_path.replace("\\", "/")
+    check_path = os.path.join(assets_dir, "menu_check.png")
+    try:
+        _draw_check(check_path, colors["text"])
+        paths["check_icon"] = check_path.replace("\\", "/")
+    except Exception:
+        paths["check_icon"] = ""
     _arrow_icons = paths
     return paths
 

@@ -3,6 +3,7 @@ import os
 import sys
 
 from PyQt6 import sip
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
@@ -61,6 +62,10 @@ def main():
     if migrate_legacy_settings():
         logging.getLogger(__name__).info("Настройки перенесены с прежнего имени")
     app.setStyle("Fusion")
+    # Меню появляются своей анимацией (widgets.PopupMenu); системная
+    # анимация меню Windows наложилась бы на неё.
+    app.setEffectEnabled(Qt.UIEffect.UI_AnimateMenu, False)
+    app.setEffectEnabled(Qt.UIEffect.UI_FadeMenu, False)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(version_string())
     # Стили собираются после создания QApplication: иконки стрелок рисуются

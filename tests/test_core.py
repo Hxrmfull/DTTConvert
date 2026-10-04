@@ -112,7 +112,7 @@ def t_awebp():
 check("F15 animated webp -> кадры (D1, все кадры на месте)", t_awebp)
 
 def t_animated_webp_detection():
-    """Анимированный WebP с обычным расширением .webp (эмодзи 7TV/BTTV)
+    """Анимированный WebP с обычным расширением .webp (эмодзи 7TV)
     должен распознаваться как анимация, а не как статичная картинка."""
     from worker import get_category, is_animated_image
     src = os.path.join(WORK, "анимация.webp")
@@ -952,18 +952,23 @@ def t_twitch_badges_points():
     assert sorted(sizes)==[28,56,112], sizes
 check("N4 значки подписки и иконки баллов Twitch: размеры и лимит 25 КБ", t_twitch_badges_points)
 
-def t_7tv_bttv_auto():
+def t_7tv_auto():
     d=os.path.join(WORK,"7tv_anim"); made=run_job(ANIM_WEBP,"seventv_emote",d)
     assert made==["эмоут_7tv.webp"], made
+    # 7TV хранит смайлик в его пропорциях: высота 128, ширина по картинке
+    # (исходник 200×100 → 256×128), без прозрачных полей.
     with Image.open(os.path.join(d,made[0])) as im:
-        assert im.size==(128,128) and getattr(im,"n_frames",1)>1, (im.size, getattr(im,"n_frames",1))
+        assert im.size==(256,128) and getattr(im,"n_frames",1)>1, (im.size, getattr(im,"n_frames",1))
     d2=os.path.join(WORK,"7tv_static"); made2=run_job(IMG,"seventv_emote",d2)
     assert made2==["img_7tv.png"], made2
-    d3=os.path.join(WORK,"bttv"); made3=run_job(SRC,"bttv_emote",d3)
-    assert made3==["люси1_bttv.gif"], made3
-    assert os.path.getsize(os.path.join(d3,made3[0]))<=1024*1024
-    assert fp.get_media_info(os.path.join(d3,made3[0]))["width"]==112
-check("N5 7TV и BTTV: анимация из анимации, PNG из картинки", t_7tv_bttv_auto)
+    with Image.open(os.path.join(d2,made2[0])) as im: assert im.size==(256,128), im.size
+    # Шире 3:1 — упирается в 384 по ширине.
+    d3=os.path.join(WORK,"7tv_wide"); made3=run_job(WIDE,"seventv_emote",d3)
+    with Image.open(os.path.join(d3,made3[0])) as im: assert im.size==(384,96), im.size
+    # «Заполнить квадрат» — по-прежнему квадрат.
+    d4=os.path.join(WORK,"7tv_fill"); made4=run_job(IMG,"seventv_emote",d4,fill_square=True)
+    with Image.open(os.path.join(d4,made4[0])) as im: assert im.size==(128,128), im.size
+check("N5 7TV: анимация из анимации, PNG из картинки, свои пропорции", t_7tv_auto)
 
 def t_whatsapp():
     d=os.path.join(WORK,"wa"); made=run_job(IMG,"whatsapp_static",d)
@@ -989,6 +994,36 @@ def t_whatsapp():
     else:
         raise AssertionError("анимированный стикер из картинки должен давать ошибку")
 check("N6 WhatsApp: стикер, анимированный стикер и иконка набора по лимитам", t_whatsapp)
+
+def t_kick_youtube():
+    ONE_MB = 1_000_000
+    d=os.path.join(WORK,"kick"); made=run_job(IMG,"kick_emote",d)
+    assert made==["img_kick.png"], made
+    with Image.open(os.path.join(d,made[0])) as im: assert im.size==(500,500) and im.format=="PNG"
+    assert os.path.getsize(os.path.join(d,made[0]))<ONE_MB
+    d=os.path.join(WORK,"kick_gif"); made=run_job(LONG,"kick_emote_gif",d)
+    out=os.path.join(d,made[0])
+    assert made[0].endswith("_kick.gif"), made
+    with Image.open(out) as im:
+        assert im.size==(256,256) and im.n_frames>1, (im.size, im.n_frames)
+    assert os.path.getsize(out)<ONE_MB, os.path.getsize(out)
+    d=os.path.join(WORK,"kick_badge"); made=run_job(IMG,"kick_badge_pack",d)
+    assert made==["img_kick_badge_36.png","img_kick_badge_72.png"], made
+    d=os.path.join(WORK,"yt"); made=run_job(SRC,"youtube_emoji",d)
+    with Image.open(os.path.join(d,made[0])) as im:
+        assert im.size==(480,480) and im.format=="PNG" and getattr(im,"n_frames",1)==1
+    assert made==["люси1_yt_emoji.png"], made
+    d=os.path.join(WORK,"yt_badge"); made=run_job(IMG,"youtube_badge",d)
+    with Image.open(os.path.join(d,made[0])) as im: assert im.size==(128,128)
+    try:
+        run_job(IMG,"kick_emote_gif",os.path.join(WORK,"kick_bad"))
+    except AssertionError as e:
+        assert "только из видео" in str(e), e
+    else:
+        raise AssertionError("анимированный смайлик Kick из картинки должен давать ошибку")
+    assert worker.is_static_target("kick_emote") and not worker.is_static_target("kick_emote_gif")
+    assert worker.is_static_target("youtube_emoji")
+check("N6a Kick и YouTube: смайлики, GIF, значки и эмодзи по требованиям", t_kick_youtube)
 
 def t_fill_square():
     fit=os.path.join(WORK,"fit"); fill=os.path.join(WORK,"fill")

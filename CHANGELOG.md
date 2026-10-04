@@ -5,6 +5,44 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Kick and YouTube tabs**, each with its own theme and chat preview.
+  Kick: emote PNG 500×500 or animated GIF, sub badge 36/72 px. YouTube:
+  member emoji 480×480 and member badge 128×128.
+- **Files from links.** Paste a link with `Ctrl+V`, drag it from a browser
+  or use "Add from a link…" in the queue menu. A direct link to a file
+  works, and so does a 7TV, FFZ or Giphy page or any page with a picture.
+  A picture copied in a browser keeps its animation.
+- **One-click update.** In an installed copy the update link downloads the
+  new version, checks it and installs it; the app restarts by itself.
+- **Animation in the interface.** Short animations and videos (up to 10 s)
+  play in queue thumbnails and the chat preview — now video, APNG and
+  animated AVIF too; long videos show a single frame, and a still preset
+  shows the frame that goes into the file. Only visible thumbnails play,
+  and everything pauses while the window is minimized. Turn it off in the
+  version menu.
+- **A link field above the queue**: paste a link and press Enter.
+
+### Changed
+
+- The version number and the language moved to the top-right corner. The
+  version number opens its menu with a plain click; the menu looks like the
+  drop-down lists and appears with the same smooth animation.
+- The window is at least 1010 px wide (was 980): seven tabs need the room.
+- **7TV emotes keep their proportions**: 128 px high and as wide as the
+  picture, up to 3:1 — 7TV stores and shows them that way, so a wide
+  emote no longer shrinks into a square. Limits follow 7TV's upload
+  dialog: up to 7 MB and 1000 frames (was 1 MB and 150).
+- Animations pause while the app window is inactive, not only when it's
+  minimized.
+
+### Removed
+
+- BTTV support.
+
 ## 1.2.2 — 2026-10-04
 
 ### Changed
