@@ -3,7 +3,7 @@
 """
 
 APP_NAME = "DTTConvert"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 # Пустая стадия — релиз. Для беты сюда возвращается "beta".
 APP_STAGE = ""
 
