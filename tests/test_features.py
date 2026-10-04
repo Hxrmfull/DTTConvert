@@ -641,7 +641,6 @@ check("выключенное поле и его подпись выглядят
 
 
 def t_queue_row_fits():
-    from PyQt6.QtCore import QRect
     from main_window import DATA_ROLE, STATUS_ERROR
     from errors import LocalizedRuntimeError
     long_name = os.path.join(WORK, "очень_длинное_имя_файла_для_проверки_очереди_" * 2 + ".png")
