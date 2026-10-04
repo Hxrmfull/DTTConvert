@@ -536,6 +536,111 @@ def t_update_check():
 check("проверка обновлений: ссылка появляется, отключение работает", t_update_check)
 
 
+def t_update_one_click():
+    """Обновление в один щелчок — без сети: «GitHub» отдаёт описание
+    выпуска, а установщик лежит в локальном файле (file://)."""
+    import hashlib
+    import pathlib
+    import updater
+    import main_window as mw
+
+    # Вариант сборки: по деинсталлятору рядом с exe и FFmpeg внутри сборки.
+    app_dir = os.path.join(WORK, "installed"); bundle = os.path.join(app_dir, "_internal")
+    os.makedirs(bundle, exist_ok=True)
+    exe = os.path.join(app_dir, "DTTConvert.exe")
+    assert updater.installed_variant(exe, bundle) is None, "без деинсталлятора — не установщик"
+    open(os.path.join(app_dir, "unins000.exe"), "wb").close()
+    assert updater.installed_variant(exe, bundle) == updater.VARIANT_WITHOUT_FFMPEG
+    open(os.path.join(bundle, "ffmpeg.exe"), "wb").close()
+    assert updater.installed_variant(exe, bundle) == updater.VARIANT_WITH_FFMPEG
+    assert updater.installed_variant() is None, "запуск из исходников не обновляется установщиком"
+
+    payload = b"MZ" + os.urandom(300_000)
+    src = os.path.join(WORK, "setup_src.exe"); open(src, "wb").write(payload)
+    file_url = pathlib.Path(src).as_uri()
+    prefix = file_url.rsplit("/", 1)[0] + "/"
+    name = updater.setup_asset_name("9.9.9", updater.VARIANT_WITH_FFMPEG)
+    assert name == "DTTConvert-9.9.9-windows-x64-with-ffmpeg-setup.exe"
+
+    def release(size=len(payload), digest=hashlib.sha256(payload).hexdigest(), url=file_url):
+        return {"tag_name": "v9.9.9", "html_url": "https://github.com/x/y/releases/9.9.9",
+                "assets": [{"name": name.replace("with-", "without-"), "size": 1,
+                            "browser_download_url": url},
+                           {"name": name, "size": size, "digest": f"sha256:{digest}",
+                            "browser_download_url": url}]}
+
+    original_prefix = updater.DOWNLOAD_PREFIX
+    original_fetch = updater.fetch_latest_data
+    original = (mw.installed_variant, mw.launch_installer)
+    try:
+        # Чужие ссылки и выпуск без нужного файла отвергаются.
+        assert updater.find_installer(release(), updater.VARIANT_WITH_FFMPEG) is None
+        updater.DOWNLOAD_PREFIX = prefix
+        found = updater.find_installer(release(), updater.VARIANT_WITH_FFMPEG)
+        assert found and found[0] == name and found[2] == len(payload), found
+        assert updater.find_installer({"tag_name": "v9.9.9", "html_url": "https://github.com/a",
+                                       "assets": []}, updater.VARIANT_WITH_FFMPEG) is None
+
+        # Скачивание: целиком и с верной суммой — да; иначе файла не остаётся.
+        target = os.path.join(WORK, "setup_dl.exe")
+        seen = []
+        assert updater.download_verified(file_url, target, len(payload),
+                                         hashlib.sha256(payload).hexdigest(), seen.append)
+        assert open(target, "rb").read() == payload and seen[-1] == 100
+        os.remove(target)
+        for size, digest, key in ((len(payload) + 5, None, "err_update_size"),
+                                  (len(payload) - 5, None, "err_update_size"),
+                                  (len(payload), "0" * 64, "err_update_checksum")):
+            try:
+                updater.download_verified(file_url, target, size, digest)
+                raise AssertionError(f"ошибка {key} не поднялась")
+            except updater.LocalizedRuntimeError as exc:
+                assert exc.key == key, exc.key
+            assert not os.path.exists(target) and not os.path.exists(target + ".part")
+        assert not updater.download_verified(file_url, target, len(payload), None,
+                                             cancelled=lambda: True)
+        assert not os.path.exists(target)
+
+        # Окно: щелчок → подтверждение → загрузка → запуск установщика → закрытие.
+        launched = []
+        updater.fetch_latest_data = lambda timeout=0: release()
+        mw.installed_variant = lambda: updater.VARIANT_WITH_FFMPEG
+        mw.launch_installer = launched.append
+        win = MainWindow()
+        win._on_update_found("9.9.9", "https://github.com/x/y/releases/9.9.9")
+        win.show(); settle(50)
+        win._on_update_clicked()
+        deadline = _time.monotonic() + 10
+        while not launched and _time.monotonic() < deadline:
+            settle(50)
+        assert launched, "установщик не запустился"
+        assert open(launched[0], "rb").read() == payload
+        assert os.path.basename(launched[0]) == name
+        assert not win.isVisible(), "окно не закрылось перед установкой"
+
+        # Сбой загрузки: ссылка возвращается, окно не закрывается.
+        updater.fetch_latest_data = lambda timeout=0: release(digest="0" * 64)
+        opened = []
+        win2 = MainWindow(); win2._open_update_page = lambda: opened.append(1)
+        win2._on_update_found("9.9.9", "https://github.com/x/y/releases/9.9.9")
+        win2.show(); settle(50)
+        launched.clear()
+        win2._on_update_clicked()
+        deadline = _time.monotonic() + 10
+        while win2._update_download is not None and _time.monotonic() < deadline:
+            settle(50)
+        settle(50)
+        assert not launched and win2.isVisible()
+        assert win2.update_button.isEnabled() and "9.9.9" in win2.update_button.text()
+        assert opened, "после сбоя не предложили страницу выпуска"
+        win2.close()
+    finally:
+        updater.DOWNLOAD_PREFIX = original_prefix
+        updater.fetch_latest_data = original_fetch
+        mw.installed_variant, mw.launch_installer = original
+check("обновление в один щелчок: проверка файла, запуск установщика", t_update_one_click)
+
+
 def t_twitch_long_warning():
     from job_model import ConversionJob, JobSettings
     long_clip = os.path.join(WORK, "долгий.mp4")

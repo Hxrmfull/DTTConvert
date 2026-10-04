@@ -59,7 +59,8 @@ from animation_info import animated_image_info
 from lottie_utils import (is_tgs, preview_animation_path, representative_frame,
                           write_preview_animation)
 from app_info import APP_NAME, ORGANIZATION, RELEASES_URL, version_string, window_title
-from updater import UpdateCheckWorker, is_newer
+from updater import (UpdateCheckWorker, UpdateDownloadWorker, installed_variant,
+                     is_newer, launch_installer)
 from i18n import (ENGLISH, LANGUAGE_NAMES, LANGUAGE_ORDER, current_language,
                   language_from_locale, number, plural, set_language, tr)
 from discord_utils import (
@@ -805,6 +806,10 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._check_ffmpeg_status)
         self._update_worker = None
         self._update_url = None
+        # Загрузка установщика новой версии и её процент — переживают
+        # пересборку окна при смене языка.
+        self._update_download = None
+        self._update_percent = 0
         # Сеть — не раньше, чем окно появилось: старт не должен её ждать.
         QTimer.singleShot(1500, self._start_update_check)
         cleanup_pasted_images()
@@ -894,6 +899,8 @@ class MainWindow(QMainWindow):
             self._on_update_found(
                 self.settings_store.value("known_update", "", type=str), self._update_url
             )
+            if self._update_download is not None:
+                self._show_update_progress(self._update_percent)
 
     def _build_ui(self):
         # Пока панель собирается, обработчики сигналов трогать нечего.
@@ -1794,7 +1801,7 @@ class MainWindow(QMainWindow):
         self.update_button = QPushButton()
         self.update_button.setObjectName("UpdateButton")
         self.update_button.setVisible(False)
-        self.update_button.clicked.connect(self._open_update_page)
+        self.update_button.clicked.connect(self._on_update_clicked)
         self.update_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.update_button.customContextMenuRequested.connect(
             lambda position: self._on_version_menu(position, self.update_button))
@@ -3415,6 +3422,12 @@ class MainWindow(QMainWindow):
             lambda checked: self.settings_store.setValue("check_updates", checked)
         )
         menu.addAction(toggle)
+        if self._update_url:
+            # Обновление ставится щелчком по ссылке; прочитать, что нового,
+            # можно отсюда — не скачивая.
+            page_action = QAction(tr("menu_release_page"), self)
+            page_action.triggered.connect(self._open_update_page)
+            menu.addAction(page_action)
         log_action = QAction(tr("menu_open_log"), self)
         log_action.triggered.connect(self._open_log_folder)
         menu.addAction(log_action)
@@ -3453,13 +3466,74 @@ class MainWindow(QMainWindow):
         self.settings_store.setValue("known_update", version)
         self.settings_store.setValue("known_update_url", url)
         self.update_button.setText(tr("update_available", version=version))
-        self.update_button.setToolTip(
-            tr("update_tip", current=version_string(), version=version))
+        tip = "update_tip_install" if installed_variant() else "update_tip"
+        self.update_button.setToolTip(tr(tip, current=version_string(), version=version))
         self.update_button.setVisible(True)
         self.version_label.setVisible(False)
 
     def _open_update_page(self):
         QDesktopServices.openUrl(QUrl(self._update_url or RELEASES_URL))
+
+    def _on_update_clicked(self):
+        """Обновление в один щелчок: скачать установщик, проверить, поставить.
+
+        Копию из архива и запуск из исходников установщиком не обновить —
+        для них щелчок открывает страницу выпуска, как раньше.
+        """
+        variant = installed_variant()
+        if variant is None:
+            self._open_update_page()
+            return
+        if self._update_download is not None:
+            return
+        if self.worker is not None and self.worker.isRunning():
+            QMessageBox.information(self, tr("dlg_update_title"), tr("dlg_update_busy"))
+            return
+        version = self.settings_store.value("known_update", "", type=str)
+        if not self._confirm(tr("dlg_update_title"),
+                             tr("dlg_update_text", version=version),
+                             tr("btn_update_install")):
+            return
+        self._update_download = UpdateDownloadWorker(variant, self)
+        self._update_download.progress.connect(self._show_update_progress)
+        self._update_download.downloaded.connect(self._on_update_downloaded)
+        self._update_download.failed.connect(self._on_update_failed)
+        self._update_download.finished.connect(self._on_update_download_finished)
+        self._update_download.finished.connect(self._update_download.deleteLater)
+        self._show_update_progress(0)
+        self._update_download.start()
+
+    def _show_update_progress(self, percent):
+        self._update_percent = percent
+        self.update_button.setText(tr("update_downloading", percent=percent))
+        self.update_button.setEnabled(False)
+
+    def _on_update_download_finished(self):
+        self._update_download = None
+
+    def _restore_update_button(self):
+        self._update_percent = 0
+        self.update_button.setEnabled(True)
+        self._on_update_found(
+            self.settings_store.value("known_update", "", type=str), self._update_url
+        )
+
+    def _on_update_downloaded(self, path):
+        try:
+            launch_installer(path)
+        except OSError as exc:
+            # Например, пользователь отказал в правах администратора.
+            self._on_update_failed(exc)
+            return
+        # Установщик заменит файлы программы — ей пора закрыться.
+        self.close()
+
+    def _on_update_failed(self, error):
+        self._restore_update_button()
+        if self._confirm(tr("dlg_update_failed_title"),
+                         tr("dlg_update_failed_text", error=message_text(error)),
+                         tr("btn_open_release_page")):
+            self._open_update_page()
 
     def _open_log_folder(self):
         from logging_setup import log_directory
@@ -3481,7 +3555,8 @@ class MainWindow(QMainWindow):
                 self.worker.wait(1000)
         for background in (self.scan_worker, self._thumb_worker,
                            self._image_thumb_worker, self._queue_info_worker,
-                           self._preview_worker, self._update_worker):
+                           self._preview_worker, self._update_worker,
+                           self._update_download):
             try:
                 running = background is not None and background.isRunning()
             except RuntimeError:

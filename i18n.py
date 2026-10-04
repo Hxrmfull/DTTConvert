@@ -536,6 +536,39 @@ STRINGS = {
                    "Version {current} is installed, {version} is out. Click to open "
                    "the release page on GitHub. The check can be turned off from "
                    "the right-click menu."),
+    "update_tip_install": ("Установлена версия {current}, вышла {version}. Щелчок "
+                           "скачивает и ставит новую версию. Что в ней нового — "
+                           "в меню по правому щелчку.",
+                           "Version {current} is installed, {version} is out. Click to "
+                           "download and install it. See what's new from the "
+                           "right-click menu."),
+    "update_downloading": ("Загрузка {percent} %", "Downloading {percent}%"),
+    "menu_release_page": ("Что нового в новой версии", "What's new in the new version"),
+    "dlg_update_title": ("Обновление", "Update"),
+    "dlg_update_text": (
+        "Скачать и установить версию {version}?\n\nПосле загрузки программа "
+        "закроется, установщик поставит новую версию поверх и запустит её. "
+        "Настройки сохранятся.",
+        "Download and install version {version}?\n\nOnce downloaded, the app "
+        "closes, the installer puts the new version over the old one and starts "
+        "it. Settings are kept."),
+    "btn_update_install": ("Обновить", "Update"),
+    "dlg_update_busy": ("Идёт обработка файлов. Обновить программу можно, когда "
+                        "она закончится.",
+                        "Files are being processed. The app can be updated once "
+                        "that is done."),
+    "dlg_update_failed_title": ("Обновление не удалось", "Update failed"),
+    "dlg_update_failed_text": (
+        "Не получилось скачать или запустить установщик:\n{error}\n\nНовую "
+        "версию можно скачать со страницы выпуска.",
+        "Couldn't download or start the installer:\n{error}\n\nThe new "
+        "version can be downloaded from the release page."),
+    "btn_open_release_page": ("Открыть страницу", "Open the page"),
+    "err_update_no_installer": ("в выпуске нет установщика для этой сборки",
+                                "the release has no installer for this build"),
+    "err_update_size": ("файл скачался не полностью", "the file didn't download completely"),
+    "err_update_checksum": ("контрольная сумма файла не совпала с указанной на GitHub",
+                            "the file's checksum doesn't match the one on GitHub"),
     "update_check_toggle": ("Проверять обновления при запуске",
                             "Check for updates at startup"),
     "menu_open_log": ("Открыть папку журнала", "Open the log folder"),
