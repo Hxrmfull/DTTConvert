@@ -1,6 +1,17 @@
-# DTTConvert
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="">
+</p>
 
-**English** · [Русский](README.ru.md)
+<h1 align="center">DTTConvert</h1>
+
+<p align="center">
+  <a href="https://github.com/Hxrmfull/DTTConvert/releases/latest"><img src="https://img.shields.io/github/v/release/Hxrmfull/DTTConvert?label=release" alt="release"></a>
+  <a href="https://github.com/Hxrmfull/DTTConvert/releases"><img src="https://img.shields.io/github/downloads/Hxrmfull/DTTConvert/total?label=downloads" alt="downloads"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Hxrmfull/DTTConvert?label=license" alt="license"></a>
+</p>
+
+<p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
 Converts images, GIFs, videos and stickers for **D**iscord, **T**elegram and
 **T**witch, as well as WhatsApp, Kick, YouTube and 7TV. Presets pick the size, frame
@@ -8,7 +19,7 @@ rate and file size on their own, so the platform accepts the file on the
 first try.
 
 The interface is in English and Russian; switch the language in the
-bottom-right corner.
+top-right corner.
 
 ![DTTConvert window](docs/screenshot.png)
 
@@ -82,16 +93,11 @@ Python 3.9+:
 
 ```bash
 pip install -r requirements.txt
-python main.py
+python src/main.py
 ```
 
 `pillow-heif` is only needed for HEIC, `rlottie-python` only for `.tgs`.
-
-Tests (`test_core` needs FFmpeg; no windows appear on screen):
-
-```bash
-python tests/run_all.py
-```
+The code is in `src/`, the icon in `assets/`.
 
 Windows build (needs [PyInstaller](https://pyinstaller.org/); installers
 also need [Inno Setup 6](https://jrsoftware.org/isdl.php)):

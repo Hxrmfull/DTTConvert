@@ -1,12 +1,23 @@
-# DTTConvert
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="">
+</p>
 
-[English](README.md) · **Русский**
+<h1 align="center">DTTConvert</h1>
+
+<p align="center">
+  <a href="https://github.com/Hxrmfull/DTTConvert/releases/latest"><img src="https://img.shields.io/github/v/release/Hxrmfull/DTTConvert?label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F" alt="версия"></a>
+  <a href="https://github.com/Hxrmfull/DTTConvert/releases"><img src="https://img.shields.io/github/downloads/Hxrmfull/DTTConvert/total?label=%D0%B7%D0%B0%D0%B3%D1%80%D1%83%D0%B7%D0%BA%D0%B8" alt="загрузки"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Hxrmfull/DTTConvert?label=%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F" alt="лицензия"></a>
+</p>
+
+<p align="center"><a href="README.md">English</a> · <b>Русский</b></p>
 
 Конвертер картинок, GIF, видео и стикеров для **D**iscord, **T**elegram и
 **T**witch, а также WhatsApp, Kick, YouTube и 7TV. Пресеты сами подбирают размер,
 частоту кадров и вес, чтобы площадка приняла файл с первой попытки.
 
-Интерфейс на русском и английском, язык переключается в правом нижнем углу.
+Интерфейс на русском и английском, язык переключается в правом верхнем углу.
 
 ![Окно DTTConvert](docs/screenshot.png)
 
@@ -80,16 +91,11 @@ Python 3.9+:
 
 ```bash
 pip install -r requirements.txt
-python main.py
+python src/main.py
 ```
 
 `pillow-heif` нужен только для HEIC, `rlottie-python` — только для `.tgs`.
-
-Тесты (для `test_core` нужен FFmpeg; окна на экран не выводятся):
-
-```bash
-python tests/run_all.py
-```
+Код лежит в `src/`, значок — в `assets/`.
 
 Сборка для Windows (нужен [PyInstaller](https://pyinstaller.org/); для
 установщиков — [Inno Setup 6](https://jrsoftware.org/isdl.php)):

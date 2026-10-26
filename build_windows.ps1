@@ -33,7 +33,7 @@ $ErrorActionPreference = "Stop"
 
 # Название и версия берутся из app_info.py: иначе имена архивов разъезжаются
 # с тем, что программа показывает в заголовке окна.
-$appInfo = Get-Content -LiteralPath (Join-Path $PSScriptRoot "app_info.py") -Raw -Encoding UTF8
+$appInfo = Get-Content -LiteralPath (Join-Path $PSScriptRoot "src\app_info.py") -Raw -Encoding UTF8
 if ($appInfo -notmatch 'APP_NAME\s*=\s*"([^"]+)"') { throw "В app_info.py не найдено APP_NAME." }
 $appName = $Matches[1]
 if ($appInfo -notmatch 'APP_VERSION\s*=\s*"([^"]+)"') { throw "В app_info.py не найдено APP_VERSION." }
@@ -90,7 +90,7 @@ if ($needsFfmpeg) {
 }
 
 $iconArgs = @()
-$icon = Join-Path $PSScriptRoot "icon.ico"
+$icon = Join-Path $PSScriptRoot "assets\icon.ico"
 if (Test-Path -LiteralPath $icon) {
     # --icon задаёт значок самого exe, --add-data кладёт файл внутрь сборки,
     # чтобы приложение могло поставить иконку окну во время работы.
@@ -128,9 +128,10 @@ function Build-Variant([string]$Name, [bool]$Bundle) {
         --distpath $distPath `
         --workpath $workPath `
         --specpath $workPath `
+        --paths (Join-Path $PSScriptRoot "src") `
         @binaryArgs `
         @iconArgs `
-        main.py
+        (Join-Path $PSScriptRoot "src\main.py")
     if ($LASTEXITCODE -ne 0) { throw "Сборка «$Name» завершилась с ошибкой." }
 
     $appDir = Join-Path $distPath $appName
