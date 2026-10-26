@@ -14,7 +14,7 @@
 первый кадр контейнера, а не подходящий по размеру, и файл выглядел
 как размытые 16 px. Windows выбирает кадр по размеру, ей порядок неважен.
 
-Запуск после замены icon.png:  python make_icon.py
+Запуск после замены assets/icon.png:  python tools/make_icon.py
 """
 import io
 import os
@@ -22,8 +22,8 @@ import struct
 
 from PIL import Image, ImageFilter
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(HERE, "icon.png")
+ASSETS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+SRC = os.path.join(ASSETS, "icon.png")
 
 # Набор размеров, которые Windows использует в проводнике, на панели задач
 # и в заголовке окна.
@@ -100,7 +100,7 @@ def main():
     source = Image.open(SRC).convert("RGBA")
     frames = [downscale(source, size) for size in SIZES]
 
-    ico_path = os.path.join(HERE, "icon.ico")
+    ico_path = os.path.join(ASSETS, "icon.ico")
     write_ico(frames, ico_path)
     print("создан:", ico_path, os.path.getsize(ico_path), "байт")
     print("размеры (первым идёт крупный):", [f.width for f in frames])

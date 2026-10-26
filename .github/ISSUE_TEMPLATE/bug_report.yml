@@ -1,0 +1,42 @@
+name: Bug report / Ошибка
+description: Something doesn't work or converts wrongly / Что-то не работает или конвертируется неправильно
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version / Версия
+      description: The number in the top-right corner of the window / Номер в правом верхнем углу окна
+      placeholder: "1.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: variant
+    attributes:
+      label: Build / Сборка
+      options:
+        - Installer with FFmpeg / Установщик с FFmpeg
+        - Installer without FFmpeg / Установщик без FFmpeg
+        - Portable with FFmpeg / Портативная с FFmpeg
+        - Portable without FFmpeg / Портативная без FFmpeg
+        - From source / Из исходников
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Что случилось
+      description: What you did, what you expected and what you got / Что делали, чего ждали и что получилось
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: File and preset / Файл и пресет
+      description: Input format, size, length; output format or platform preset. Attach the file if you can. / Формат, размер и длина исходника; формат или пресет площадки. Если можно — приложите файл.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / Журнал
+      description: Version menu → log folder, app.log (the last lines are enough) / Меню версии → папка журнала, app.log (хватит последних строк)
+      render: text

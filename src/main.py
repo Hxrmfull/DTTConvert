@@ -19,7 +19,10 @@ def resource_path(name):
     bundle_dir = getattr(sys, "_MEIPASS", None)
     if bundle_dir:
         directories.append(bundle_dir)
-    directories.append(os.path.dirname(os.path.abspath(__file__)))
+    source_dir = os.path.dirname(os.path.abspath(__file__))
+    directories.append(source_dir)
+    # Из исходников значки лежат в assets рядом с папкой src.
+    directories.append(os.path.join(os.path.dirname(source_dir), "assets"))
     directories.append(os.path.dirname(os.path.abspath(sys.executable)))
     for directory in directories:
         candidate = os.path.join(directory, name)

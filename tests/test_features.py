@@ -8,7 +8,7 @@ import sys
 import tempfile
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_DIR)
+sys.path.insert(0, os.path.join(PROJECT_DIR, "src"))
 # Помощники тестов (tgs_fixture) лежат рядом с наборами.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 WORK_ROOT = os.path.join(tempfile.gettempdir(), "mcs_tests")

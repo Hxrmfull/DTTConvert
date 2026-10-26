@@ -8,7 +8,7 @@ import sys
 import tempfile
 
 PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_DIR)
+sys.path.insert(0, os.path.join(PROJECT_DIR, "src"))
 # Помощники тестов (tgs_fixture) лежат рядом с наборами.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 WORK_ROOT = os.path.join(tempfile.gettempdir(), "mcs_tests")
@@ -829,7 +829,7 @@ def t_no_russian_literals_in_core():
     # Всё, что видит пользователь, должно идти через ключи перевода.
     import re
     for name in ("worker.py","ffmpeg_utils.py","image_utils.py","telegram_utils.py"):
-        src=open(os.path.join(PROJECT_DIR,name),encoding="utf-8").read()
+        src=open(os.path.join(PROJECT_DIR,"src",name),encoding="utf-8").read()
         for m in re.finditer(r"raise\s+\w*Error\(\s*f?\"([^\"]*)",src):
             assert not re.search("[а-яА-Я]",m.group(1)), f"{name}: {m.group(0)[:80]}"
 check("V3 в ядре не осталось ошибок с русским текстом вместо ключа", t_no_russian_literals_in_core)
