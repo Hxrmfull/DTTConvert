@@ -7,7 +7,6 @@
 <p align="center">
   <a href="https://github.com/Hxrmfull/DTTConvert/releases/latest"><img src="https://img.shields.io/github/v/release/Hxrmfull/DTTConvert?label=release" alt="release"></a>
   <a href="https://github.com/Hxrmfull/DTTConvert/releases"><img src="https://img.shields.io/github/downloads/Hxrmfull/DTTConvert/total?label=downloads" alt="downloads"></a>
-  <a href="https://github.com/Hxrmfull/DTTConvert/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Hxrmfull/DTTConvert/tests.yml?branch=main&label=tests" alt="tests"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Hxrmfull/DTTConvert?label=license" alt="license"></a>
 </p>
@@ -99,12 +98,6 @@ python src/main.py
 
 `pillow-heif` is only needed for HEIC, `rlottie-python` only for `.tgs`.
 The code is in `src/`, the icon in `assets/`.
-
-Tests (`test_core` needs FFmpeg; no windows appear on screen):
-
-```bash
-python tests/run_all.py
-```
 
 Windows build (needs [PyInstaller](https://pyinstaller.org/); installers
 also need [Inno Setup 6](https://jrsoftware.org/isdl.php)):

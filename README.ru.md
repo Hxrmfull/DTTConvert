@@ -7,7 +7,6 @@
 <p align="center">
   <a href="https://github.com/Hxrmfull/DTTConvert/releases/latest"><img src="https://img.shields.io/github/v/release/Hxrmfull/DTTConvert?label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F" alt="версия"></a>
   <a href="https://github.com/Hxrmfull/DTTConvert/releases"><img src="https://img.shields.io/github/downloads/Hxrmfull/DTTConvert/total?label=%D0%B7%D0%B0%D0%B3%D1%80%D1%83%D0%B7%D0%BA%D0%B8" alt="загрузки"></a>
-  <a href="https://github.com/Hxrmfull/DTTConvert/actions/workflows/tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/Hxrmfull/DTTConvert/tests.yml?branch=main&label=%D1%82%D0%B5%D1%81%D1%82%D1%8B" alt="тесты"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 | 11">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Hxrmfull/DTTConvert?label=%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F" alt="лицензия"></a>
 </p>
@@ -97,12 +96,6 @@ python src/main.py
 
 `pillow-heif` нужен только для HEIC, `rlottie-python` — только для `.tgs`.
 Код лежит в `src/`, значок — в `assets/`.
-
-Тесты (для `test_core` нужен FFmpeg; окна на экран не выводятся):
-
-```bash
-python tests/run_all.py
-```
 
 Сборка для Windows (нужен [PyInstaller](https://pyinstaller.org/); для
 установщиков — [Inno Setup 6](https://jrsoftware.org/isdl.php)):
