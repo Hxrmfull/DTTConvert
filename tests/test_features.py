@@ -173,9 +173,19 @@ check("статус-точка вместо текста в скобках", t_s
 def t_write_check():
     ok_dir = w.output_dir
     assert w._output_dir_writable() is True
-    w.output_dir = r"C:\Windows\System32\config"
-    assert w._output_dir_writable() is False, "защищённая папка прошла проверку"
-    w.output_dir = ok_dir
+    # Папку с запретом записи создаём сами: системные папки вроде
+    # System32\config открыты администратору, а на GitHub тесты идут от
+    # него. Явный запрет (deny) действует и на администраторов.
+    import subprocess
+    locked = tempfile.mkdtemp(prefix="dtt_locked_")
+    subprocess.run(["icacls", locked, "/deny", "*S-1-1-0:(W)"], check=True, capture_output=True)
+    try:
+        w.output_dir = locked
+        assert w._output_dir_writable() is False, "защищённая папка прошла проверку"
+    finally:
+        subprocess.run(["icacls", locked, "/remove:d", "*S-1-1-0"], capture_output=True)
+        shutil.rmtree(locked, ignore_errors=True)
+        w.output_dir = ok_dir
 check("проверка прав на запись в папку", t_write_check)
 
 def t_open_folder_button():

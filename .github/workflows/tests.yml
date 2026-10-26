@@ -17,8 +17,15 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      # Настоящие ffmpeg.exe и ffprobe.exe, а не заглушка choco: заглушка
+      # запускает ffmpeg дочерним процессом, и тест отмены не может его убить.
       - name: Install FFmpeg
-        run: choco install ffmpeg --no-progress -y
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath "$env:RUNNER_TEMP/ffmpeg"
+          $bin = (Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          Add-Content $env:GITHUB_PATH $bin
       - name: Run tests
         env:
           PYTHONIOENCODING: utf-8
